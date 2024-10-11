@@ -1,0 +1,16 @@
+{
+    "train": [
+        "nominal_obs_btw_validation",
+        "obs_btw_validation_reduction_factor",
+        "validation_threshold",
+        "stable_training_error_threshold"
+    ],
+    "test": [
+        "obs_btw_test",
+        "nominal_obs_to_test",
+        "test_threshold",
+        "obs_to_test_reduction_factor",
+        "significant_error_variation_threshold"
+    ]
+}
+

@@ -1,0 +1,13 @@
+{
+    "parameters": {
+        "train": {
+            "nominal_obs_btw_validation": 1000,
+            "obs_btw_validation_reduction_factor": 0
+        },
+        "test": {
+            "obs_btw_test": 2000,
+            "nominal_obs_to_test": 200,
+            "obs_to_test_reduction_factor": 0
+        }
+    }
+}

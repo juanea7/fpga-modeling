@@ -1,0 +1,17 @@
+{
+    "parameters": {
+        "train": {
+            "nominal_obs_btw_validation": 1000,
+            "obs_btw_validation_reduction_factor": 0,
+            "validation_threshold": 1,
+            "stable_training_error_threshold": 2
+        },
+        "test": {
+            "obs_btw_test": 1000,
+            "nominal_obs_to_test": 200,
+            "test_threshold": 1,
+            "obs_to_test_reduction_factor": 0,
+            "significant_error_variation_threshold": 2
+        }
+    }
+}
