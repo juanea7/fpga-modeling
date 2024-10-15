@@ -25,9 +25,7 @@ import threading
 import pickle
 import pandas as pd
 
-from remote_execution.paper_results.always_training.incremental_learning import online_models as om_all
-from remote_execution.paper_results.just_one_train.incremental_learning import online_models as om_one
-from remote_execution.paper_results.adaptative_train.incremental_learning import online_models as om_adapt
+from incremental_learning import online_models as om
 
 
 # DEBUG: no dataframe printing column limit
@@ -71,9 +69,9 @@ lock_one = threading.Lock()
 lock_adapt = threading.Lock()
 
 # Initialize the online models
-online_models_all = om_all.OnlineModels(board=args.board, lock=lock_all)
-online_models_one = om_one.OnlineModels(board=args.board, lock=lock_one)
-online_models_adapt = om_adapt.OnlineModels(board=args.board, lock=lock_adapt)
+online_models_all = om.OnlineModels(board=args.board, lock=lock_all, train_mode="always_train", capture_all_traces=True)
+online_models_one = om.OnlineModels(board=args.board, lock=lock_one, train_mode="one_train", capture_all_traces=True)
+online_models_adapt = om.OnlineModels(board=args.board, lock=lock_adapt, train_mode="adaptive", capture_all_traces=True)
 print("Online Models have been successfully initialized.")
 
 # Time measurement logic
@@ -182,7 +180,7 @@ def pruebas(train_df, online_models, data_save_file_name):
                 wait_obs -= len(sub_df)
                 # Update the training metric, just so it can be properly compared with traditional models for the paper
                 # Have in mind that in real scenario those traces are not generated
-                online_models.idle_update_metric(sub_df)
+                online_models.idle_update_metrics(sub_df)
                 continue
 
         # Train/test from each sub_df
@@ -206,10 +204,10 @@ def pruebas(train_df, online_models, data_save_file_name):
         tmp_var = [model._training_monitor for model in online_models._models]
         pickle.dump(tmp_var, file)
 
-    # Save the actual models
-    with open(f"./model_error_figures/{data_save_file_name}_models.pkl", 'wb') as file:
-        tmp_var = [model for model in online_models._models]
-        pickle.dump(tmp_var, file)
+    # # Save the actual models
+    # with open(f"./model_error_figures/{data_save_file_name}_models.pkl", 'wb') as file:
+    #     tmp_var = [model for model in online_models._models]
+    #     pickle.dump(tmp_var, file)
 
     return online_models
 

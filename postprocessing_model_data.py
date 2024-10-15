@@ -314,8 +314,8 @@ if __name__ == "__main__":
     # Indicate the path of the file containing the online models data
     parser.add_argument(
         '-m',
-        dest="models_path",
-        help='<Required> Path to the file containing the online models data',
+        dest="models_training_monitors_path",
+        help='<Required> Path to the file containing the online models training monitor',
         required=True
         )
 

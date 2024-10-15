@@ -669,7 +669,7 @@ def training_thread_ram_func(online_models, tcp_socket, board, cpu_usage):
     ###############
 
     # Generar gráficas
-    online_models.print_training_monitor_info()
+    # online_models.print_training_monitor_info()
 
     # Guardar temporal data y modelos en fichero (online_models y temporal_data)
     # Create directory if it does not exit
@@ -681,8 +681,8 @@ def training_thread_ram_func(online_models, tcp_socket, board, cpu_usage):
     data_save_file_name = input("Give me name to save models object and temporal data "
                                 f"(path:{model_error_figures_dir}/<name>.pkl): ")
 
-    # Save the models
-    with open(f"{model_error_figures_dir}/{data_save_file_name}_models.pkl", 'wb') as file:
+    # Save the models training monitor
+    with open(f"{model_error_figures_dir}/{data_save_file_name}_training_monitor.pkl", 'wb') as file:
         tmp_var = [model._training_monitor for model in online_models._models]
         pickle.dump(tmp_var, file)
 
