@@ -53,8 +53,25 @@ class OnlineModels():
     def __init__(self,
                  board,
                  lock,
-                 input_models=None):
-        """Initialize each model."""
+                 input_models=None,
+                 train_mode="adaptive",
+                 capture_all_traces=False):
+        """
+        Initialize the OnlineModels class.
+
+        Parameters
+        ----------
+        board : str
+            The board to be used. It can be "ZCU" or "PYNQ".
+        lock : multiprocessing.Lock
+            Lock to be used for thread safety.
+        input_models : list, optional
+            List of input models to be used. The default is None.
+        train_mode : str
+            The training mode to be used for the online learning process ("adaptive", "always_train", "one_train").
+        capture_all_traces : bool
+            Flag to indicate if all the traces are going to be captured, not just the ones that are going to be used for training.
+        """
 
         # Check if the board is valid and set the number of models
         # TODO: Implement new boards (AU250)
@@ -72,19 +89,24 @@ class OnlineModels():
         # Initialize the models
         if board == "ZCU":
             self._models = [
-                models.PowerModel("PS",input_model=input_models[0]),
-                models.PowerModel("PL",input_model=input_models[1]),
-                models.TimeModel(input_model=input_models[2])
+                models.PowerModel("PS",input_model=input_models[0], train_mode=train_mode, capture_all_traces=capture_all_traces),
+                models.PowerModel("PL",input_model=input_models[1], train_mode=train_mode, capture_all_traces=capture_all_traces),
+                models.TimeModel(input_model=input_models[2], train_mode=train_mode, capture_all_traces=capture_all_traces)
                 ]
         elif board == "PYNQ":
             self._models = [
-                models.PowerModel("PS+PL",input_model=input_models[0]),
-                models.TimeModel(input_model=input_models[2])
+                models.PowerModel("PS+PL",input_model=input_models[0], train_mode=train_mode, capture_all_traces=capture_all_traces),
+                models.TimeModel(input_model=input_models[2], train_mode=train_mode, capture_all_traces=capture_all_traces)
                 ]
         else:
             # TODO: Implement AU250
             raise ValueError(f"Board {board} not supported.")
 
+        # Set the training mode
+        self._train_mode = train_mode
+        self._capture_all_traces = capture_all_traces
+
+        # Set the methods
         self.update_models = self._update_models
         self.predict_one = self._predict_one
         self.get_metrics = self._get_metrics
@@ -92,6 +114,10 @@ class OnlineModels():
         self.print_training_monitor_info = self._print_training_monitor_info
         self.grid_search_train = self._grid_search_adaptative_train_zcu
         self.grid_search_train_multiprocessing = self._grid_search_adaptative_train_zcu_multiprocessing
+
+        # Particular method for capturing all traces
+        if self._capture_all_traces is True:
+            self.idle_update_metrics = self._idle_update_metrics
 
         self._lock = lock
 
@@ -315,6 +341,37 @@ class OnlineModels():
         return self._get_models_mode()
 
     # TODO: Remove iteration (for plotting)
+    def _idle_update_metrics(self, train_df):
+        """Update the Training Monitor when in idle (for the paper)."""
+
+        # Preprocess dataframe
+        features_df, concatenated_labels_df = self._preprocess_dataframe(train_df, self._board)
+
+        # Acquire lock - Freeze models
+        # TODO: el deepcopy cada vez tarda más... segundos
+        # TODO: Tener en cuenta que podría pasar algo cuando se haga un predict_one mientras se entrena
+        # TODO: Aunque en realidad... sería solo leer. Hay que mirar implementación en riverml
+        # with self._lock:
+        #     self._top_power_prediction_model = copy.deepcopy(self._top_power_model)
+        #     self._bottom_power_prediction_model = copy.deepcopy(self._bottom_power_model)
+        #     self._time_prediction_model = copy.deepcopy(self._time_model)
+
+        # Loop over the observations
+        for features, labels in river.stream.iter_pandas(features_df, concatenated_labels_df, shuffle=False, seed=42):
+
+            # Features and labels accommodation
+            features, labels = self._features_labels_accommodation(features, labels)
+
+            for model, label in zip(self._models, labels):
+                # Make a prediction
+                y_pred = model.predict_one(features)
+                # Update metric
+                model.update_metric(label, y_pred)
+                # Update the Training Metric
+                model._training_monitor.train_training_metric = model._training_monitor.train_training_metric.update(label, y_pred)
+                model._training_monitor.train_training_metric_history.append(model._training_monitor.train_training_metric.get())
+
+    # TODO: Remove iteration (for plotting)
     def _train_models(self, train_df, iteration):
         """(Thread Safe)Test the models with a dataframe. Update the Training Monitor."""
 
@@ -345,10 +402,12 @@ class OnlineModels():
             for model, label in zip(self._models, labels):
                 # Make a prediction
                 y_pred = model.predict_one(features)
-                # Train the model
-                model.train_single(features, label, iteration)
-                # Update metric
-                model.update_metric(label, y_pred)
+                # Special case when in "one_train" mode, skip training after first training phase
+                if model._training_monitor.stop_training_forever is False:
+                    # Train the model
+                    model.train_single(features, label, iteration)
+                    # Update metric
+                    model.update_metric(label, y_pred)
                 # Update the Training Monitor
                 model.update_state(label, y_pred, iteration)
 
@@ -419,6 +478,12 @@ class OnlineModels():
                     model.update_metric(label, y_pred)
                     model.update_state(label, y_pred, iteration)
                 elif mode == "idle":
+                    if self._capture_all_traces is True:
+                        y_pred = model.predict_one(features)
+                        model.update_metric(label, y_pred)
+                        # Update training metric
+                        model._training_monitor.train_training_metric = model._training_monitor.train_training_metric.update(label, y_pred)
+                        model._training_monitor.train_training_metric_history.append(model._training_monitor.train_training_metric.get())
                     # Increment "idle" current iteration when "idle"
                     model.increment_idle_phase()
 

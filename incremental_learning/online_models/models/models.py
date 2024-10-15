@@ -62,7 +62,26 @@ class Singleton(type):
 
 class TrainingMonitor:
     """Training monitor for re-train and stop-training strategies management"""
-    def __init__(self, model_type):
+    def __init__(self, model_type, train_mode="adaptive", capture_all_traces=False):
+        """
+        Constructor for the TrainingMonitor class.
+
+        Parameters
+        ----------
+        model_type : str
+            The type of the rivel model ("PS", "PL2, "PS+PL", "Time").
+        train_mode : str
+            The training mode to be used for the online learning process ("adaptive", "always_train", "one_train").
+        capture_all_traces : bool
+            Flag to indicate if all the traces are going to be captured, not just the ones that are going to be used for training.
+        """
+
+        # Training mode attribute
+        self.train_mode = train_mode
+        # Stop training flag
+        self.stop_training_forever = False
+        # Capture all traces attribute
+        self.capture_all_traces = capture_all_traces
 
         # Operation mode attribute
         self.operation_mode = "train"
@@ -226,7 +245,8 @@ class TrainingMonitor:
         """Indicates the Training Monitor that one idle observations have passed."""
 
         # TODO: Remove. For ploting the metrics
-        self.train_training_metric_history += [0]
+        if self.capture_all_traces is False:
+            self.train_training_metric_history += [0]
 
         # Check whether the test stage is operating in idle or testing mode
         if self.operation_mode == "idle":
@@ -255,8 +275,9 @@ class TrainingMonitor:
         """
 
         # TODO: Remove. For ploting the metrics
-        num_iterations = self.test_obs_btw_test - self.test_current_iteration
-        self.train_training_metric_history += [0] * num_iterations
+        if self.capture_all_traces is False:
+            num_iterations = self.test_obs_btw_test - self.test_current_iteration
+            self.train_training_metric_history += [0] * num_iterations
 
         # Check whether the test stage is operating in idle or testing mode
         if self.operation_mode == "idle":
@@ -513,52 +534,60 @@ class TrainingMonitor:
                     <= (self.train_training_metric.get() + self.train_validation_threshold)
                 )
 
-                # Check if the train condition passes
-                if tmp_train_condition:
-                    # If the code reaches this point it means the training
-                    # error is within the validation threshold after X
-                    # observations
+                # Only not checking train condition when in always_train mode
+                if self.train_mode != "always_train":
+                    # Check if the train condition passes
+                    if tmp_train_condition:
+                        # If the code reaches this point it means the training
+                        # error is within the validation threshold after X
+                        # observations
 
-                    # Increment stable_training_error counter bc validation_metric is within range
-                    self.train_stable_training_error += 1
-                    # Reduce the actual observations between validations by a factor
-                    self.train_actual_obs_btw_validation = round(self.train_nominal_obs_btw_validation * (1 - self.train_stable_training_error * self.train_obs_btw_validation_reduction_factor))
-                else:
-                    # From "train" to "train"
-                    # If the code reaches this point it means the training
-                    # error is not within the validation threshold after X
-                    # observations
+                        # Increment stable_training_error counter bc validation_metric is within range
+                        self.train_stable_training_error += 1
+                        # Reduce the actual observations between validations by a factor
+                        self.train_actual_obs_btw_validation = round(self.train_nominal_obs_btw_validation * (1 - self.train_stable_training_error * self.train_obs_btw_validation_reduction_factor))
+                    else:
+                        # From "train" to "train"
+                        # If the code reaches this point it means the training
+                        # error is not within the validation threshold after X
+                        # observations
 
-                    # Set previous stage as "train"
-                    self.previous_stage = "train"
+                        # Set previous stage as "train"
+                        self.previous_stage = "train"
 
-                    # Clear the stable_training_error counter
-                    self.train_stable_training_error = 0
-                    # Set the actual observations between validations to its nominal
-                    self.train_actual_obs_btw_validation = self.train_nominal_obs_btw_validation
-                    # Freeze the training_metric. Storing it in validation_metric
-                    self.train_validation_metric = self.train_training_metric.get()
-                    # Signal a change in the stage to other models
-                    self.stage_changed = True
+                        # Clear the stable_training_error counter
+                        self.train_stable_training_error = 0
+                        # Set the actual observations between validations to its nominal
+                        self.train_actual_obs_btw_validation = self.train_nominal_obs_btw_validation
+                        # Freeze the training_metric. Storing it in validation_metric
+                        self.train_validation_metric = self.train_training_metric.get()
+                        # Signal a change in the stage to other models
+                        self.stage_changed = True
 
-            # Stop training and go to testing mode when the stable training
-            # error counter reaches the threshold indicating the model is well
-            # trained
-            if self.train_stable_training_error == self.train_stable_training_error_threshold:
+            # Only stop training when in always_train mode
+            if self.train_mode != "always_train":
+                # Stop training and go to testing mode when the stable training
+                # error counter reaches the threshold indicating the model is well
+                # trained
+                if self.train_stable_training_error == self.train_stable_training_error_threshold:
 
-                # Set previous stage as "train"
-                self.previous_stage = "train"
+                    if self.train_mode == "one_train":
+                        # Signal the end of the one-time training process
+                        self.stop_training_forever = True
+                    else:
+                        # Set previous stage as "train"
+                        self.previous_stage = "train"
 
-                # Change operation model to "idle"
-                self.operation_mode = "idle"
-                # TODO: Remove. Mark start_training as True for next training phase
-                self.train_start_training = True
-                # Clear the stable training counter
-                self.train_stable_training_error = 0
-                # Set the actual obs between validations to its nominal
-                self.train_actual_obs_btw_validation = self.train_nominal_obs_btw_validation
-                # TODO: Remove. Mark the iteration of the end of the training process
-                self.train_train_regions[-1].append(iteration)
+                        # Change operation model to "idle"
+                        self.operation_mode = "idle"
+                        # TODO: Remove. Mark start_training as True for next training phase
+                        self.train_start_training = True
+                        # Clear the stable training counter
+                        self.train_stable_training_error = 0
+                        # Set the actual obs between validations to its nominal
+                        self.train_actual_obs_btw_validation = self.train_nominal_obs_btw_validation
+                        # TODO: Remove. Mark the iteration of the end of the training process
+                        self.train_train_regions[-1].append(iteration)
 
         # Test stage tasks
         # - Wait in idle mode for X observations (without even predicting)
@@ -707,11 +736,29 @@ class TrainingMonitor:
 
 class Model():
     """Online model implementation (parent class)."""
-    def __init__(self, model, metric, model_type):
+    def __init__(self, model, metric, model_type, train_mode="adaptive", capture_all_traces=False):
+        """
+        Constructor for the Model class.
+
+        Parameters
+        ----------
+        model : river model
+            The model to be used for the online learning process.
+        metric : river metric
+            The metric to be used for the online learning process.
+        model_type : str
+            The type of the rivel model ("PS", "PL2, "PS+PL", "Time").
+        train_mode : str
+            The training mode to be used for the online learning process ("adaptive", "always_train", "one_train").
+        capture_all_traces : bool
+            Flag to indicate if all the traces are going to be captured, not just the ones that are going to be used for training.
+        """
         self._model = model
         self._metric = metric
         self._type = model_type
-        self._training_monitor = TrainingMonitor(self._type)
+        self._train_mode = train_mode
+        self._capture_all_traces = capture_all_traces
+        self._training_monitor = TrainingMonitor(self._type, self._train_mode, self._capture_all_traces)
 
     def update_state(self, y, y_pred, iteration):
         """
@@ -1457,7 +1504,7 @@ class Model():
         self._metric = self.metric.update(real_value, predicted_value)
 
         return self._metric
-    
+
     def test_batch(self, features_df, labels_df, metric=None):
         """Test the model on a set of observations reveived as a dataframe."""
 
@@ -1692,7 +1739,21 @@ class Model():
 class PowerModel(Model):
     """Power model as a Singleton class."""
 
-    def __init__(self, power_type, input_model=None):
+    def __init__(self, power_type, input_model=None, train_mode="adaptive", capture_all_traces=False):
+        """
+        Constructor of the PowerModel class.
+
+        Parameters
+        ----------
+        power_type : str
+            Type of power model to use. Must be one of: PS, PL, PS+PL
+        input_model : river.base.Estimator, optional
+            Model to use for the power model. If None, a default model is used.
+        train_mode : str
+            The training mode to be used for the online learning process ("adaptive", "always_train", "one_train").
+        capture_all_traces : bool
+            Flag to indicate if all the traces are going to be captured, not just the ones that are going to be used for training.
+        """
 
         # Define the model and metrics used
         if input_model is None:
@@ -1714,13 +1775,25 @@ class PowerModel(Model):
             raise ValueError(f"Invalid type of Power model: {power_type}. Must be one of: PS, PL, PS+PL")
         tmp_type = power_type
 
-        super().__init__(tmp_model, tmp_metric, tmp_type)
+        super().__init__(tmp_model, tmp_metric, tmp_type, train_mode=train_mode, capture_all_traces=capture_all_traces)
 
 
 class TimeModel(Model):
     """Performance model as a Singleton class."""
 
-    def __init__(self, input_model=None):
+    def __init__(self, input_model=None, train_mode="adaptive", capture_all_traces=False):
+        """
+        Constructor of the TimeModel class.
+
+        Parameters
+        ----------
+        input_model : river.base.Estimator, optional
+            Model to use for the time model. If None, a default model is used.
+        train_mode : str
+            The training mode to be used for the online learning process ("adaptive", "always_train", "one_train").
+        capture_all_traces : bool
+            Flag to indicate if all the traces are going to be captured, not just the ones that are going to be used for training.
+        """
 
         # Define the model and metrics used
         if input_model is None:
@@ -1732,7 +1805,7 @@ class TimeModel(Model):
 
         tmp_type = "Time"
 
-        super().__init__(tmp_model, tmp_metric, tmp_type)
+        super().__init__(tmp_model, tmp_metric, tmp_type, train_mode=train_mode, capture_all_traces=capture_all_traces)
 
 
 if __name__ == "__main__":
