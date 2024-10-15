@@ -523,7 +523,7 @@ def training_thread_ram_func(online_models, tcp_socket, board, cpu_usage):
             # Let the models manager decide whether train or test
             # TODO: Quizá es más eficiente no entrenar con cada iteracion, sino concatenar los
             #       dataframes generados y entrenar una vez hayan llegado todos
-            iteration, next_operation_mode, wait_obs = online_models.update_models_zcu(
+            iteration, next_operation_mode, wait_obs = online_models.update_models(
                 dataframe,
                 iteration
                 )
@@ -550,13 +550,13 @@ def training_thread_ram_func(online_models, tcp_socket, board, cpu_usage):
         temporal_data[-1].append(time.time())
         if next_operation_mode == "idle":
             # In case we are in idle in next operation mode we have to substract the wait_obs since
-            # inside the update_models_zcu the training monitor increases the iteration value by
+            # inside the update_models the training monitor increases the iteration value by
             # wait_obs before it happens.
             # So to ensure the postprocessing of the temporal data is properly applied we need to
             # substract that
             temporal_data[-1].append(iteration - wait_obs - 1)
         else:
-            temporal_data[-1].append(iteration - 1)  # Since update_models_zcu increases the iteration
+            temporal_data[-1].append(iteration - 1)  # Since update_models increases the iteration
 
         # TODO: Lo de entrenar of test se quita porque ahora lo gestion el Training Monitor
         # Send the metrics obtained via socket
@@ -661,18 +661,11 @@ def training_thread_ram_func(online_models, tcp_socket, board, cpu_usage):
     # TODO: Está triplicado, si nos cargamos 2 replicas?
     # When there are no more obs the system is either in train or test mode.
     # We need fill the last test/train_region list with the actual iteration
-    if online_models._top_power_model._training_monitor.operation_mode == "train":
-        online_models._top_power_model._training_monitor.train_train_regions[-1].append(iteration-1)
-    elif online_models._top_power_model._training_monitor.operation_mode == "test":
-        online_models._top_power_model._training_monitor.test_test_regions[-1].append(iteration-1)
-    if online_models._bottom_power_model._training_monitor.operation_mode == "train":
-        online_models._bottom_power_model._training_monitor.train_train_regions[-1].append(iteration-1)
-    elif online_models._bottom_power_model._training_monitor.operation_mode == "test":
-        online_models._bottom_power_model._training_monitor.test_test_regions[-1].append(iteration-1)
-    if online_models._time_model._training_monitor.operation_mode == "train":
-        online_models._time_model._training_monitor.train_train_regions[-1].append(iteration-1)
-    elif online_models._time_model._training_monitor.operation_mode == "test":
-        online_models._time_model._training_monitor.test_test_regions[-1].append(iteration-1)
+    for model in online_models._models:
+        if model._training_monitor.operation_mode == "train":
+            model._training_monitor.train_train_regions[-1].append(iteration-1)
+        elif model._training_monitor.operation_mode == "test":
+            model._training_monitor.test_test_regions[-1].append(iteration-1)
     ###############
 
     # Generar gráficas
@@ -690,11 +683,7 @@ def training_thread_ram_func(online_models, tcp_socket, board, cpu_usage):
 
     # Save the models
     with open(f"{model_error_figures_dir}/{data_save_file_name}_models.pkl", 'wb') as file:
-        tmp_var = [
-            online_models._top_power_model._training_monitor,
-            online_models._bottom_power_model._training_monitor,
-            online_models._time_model._training_monitor
-            ]
+        tmp_var = [model._training_monitor for model in online_models._models]
         pickle.dump(tmp_var, file)
 
     # Save the temporal data
@@ -1109,7 +1098,7 @@ def prediction_thread_func(online_models, tcp_socket, board, cpu_usage):
                 top_power_prediction, \
                     bottom_power_prediction, \
                     time_prediction = \
-                    online_models.predict_one_s(features)
+                    online_models.predict_one(features)
 
                 # t2 = time.time()
 
@@ -1122,7 +1111,7 @@ def prediction_thread_func(online_models, tcp_socket, board, cpu_usage):
             elif board == "PYNQ":
                 power_prediction, \
                     time_prediction = \
-                    online_models.predict_one_s(features)
+                    online_models.predict_one(features)
 
                 # t2 = time.time()
 

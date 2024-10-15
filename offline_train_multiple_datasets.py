@@ -175,7 +175,7 @@ for i in range(num_chunks):
             continue
 
     # Train/test from each sub_df
-    iteration, next_operation_mode, wait_obs = online_models.update_models_zcu(sub_df, iteration)
+    iteration, next_operation_mode, wait_obs = online_models.update_models(sub_df, iteration)
 
     # Tell the setup to get measurements (when in train or test) or wait (when in idle phase)
     # This is simulated in previous part
@@ -183,18 +183,11 @@ for i in range(num_chunks):
 # TODO: Remove
 # When there are no more obs the system is either in train or test mode.
 # We need fill the last test/train_region list with the actual iteration
-if online_models._top_power_model._training_monitor.operation_mode == "train":
-    online_models._top_power_model._training_monitor.train_train_regions[-1].append(iteration-1)
-elif online_models._top_power_model._training_monitor.operation_mode == "test":
-    online_models._top_power_model._training_monitor.test_test_regions[-1].append(iteration-1)
-if online_models._bottom_power_model._training_monitor.operation_mode == "train":
-    online_models._bottom_power_model._training_monitor.train_train_regions[-1].append(iteration-1)
-elif online_models._bottom_power_model._training_monitor.operation_mode == "test":
-    online_models._bottom_power_model._training_monitor.test_test_regions[-1].append(iteration-1)
-if online_models._time_model._training_monitor.operation_mode == "train":
-    online_models._time_model._training_monitor.train_train_regions[-1].append(iteration-1)
-elif online_models._time_model._training_monitor.operation_mode == "test":
-    online_models._time_model._training_monitor.test_test_regions[-1].append(iteration-1)
+for model in online_models._models:
+    if model._training_monitor.operation_mode == "train":
+        model._training_monitor.train_train_regions[-1].append(iteration-1)
+    elif model._training_monitor.operation_mode == "test":
+        model._training_monitor.test_test_regions[-1].append(iteration-1)
 ###############
 
 # Print training stages

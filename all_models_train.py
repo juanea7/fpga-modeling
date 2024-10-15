@@ -186,7 +186,7 @@ def pruebas(train_df, online_models, data_save_file_name):
                 continue
 
         # Train/test from each sub_df
-        iteration, next_operation_mode, wait_obs = online_models.update_models_zcu(sub_df, iteration)
+        iteration, next_operation_mode, wait_obs = online_models.update_models(sub_df, iteration)
 
         # Tell the setup to get measurements (when in train or test) or wait (when in idle phase)
         # This is simulated in previous part
@@ -194,36 +194,21 @@ def pruebas(train_df, online_models, data_save_file_name):
     # TODO: Remove
     # When there are no more obs the system is either in train or test mode.
     # We need fill the last test/train_region list with the actual iteration
-    if online_models._top_power_model._training_monitor.operation_mode == "train":
-        online_models._top_power_model._training_monitor.train_train_regions[-1].append(iteration-1)
-    elif online_models._top_power_model._training_monitor.operation_mode == "test":
-        online_models._top_power_model._training_monitor.test_test_regions[-1].append(iteration-1)
-    if online_models._bottom_power_model._training_monitor.operation_mode == "train":
-        online_models._bottom_power_model._training_monitor.train_train_regions[-1].append(iteration-1)
-    elif online_models._bottom_power_model._training_monitor.operation_mode == "test":
-        online_models._bottom_power_model._training_monitor.test_test_regions[-1].append(iteration-1)
-    if online_models._time_model._training_monitor.operation_mode == "train":
-        online_models._time_model._training_monitor.train_train_regions[-1].append(iteration-1)
-    elif online_models._time_model._training_monitor.operation_mode == "test":
-        online_models._time_model._training_monitor.test_test_regions[-1].append(iteration-1)
+    for model in online_models._models:
+        if model._training_monitor.operation_mode == "train":
+            model._training_monitor.train_train_regions[-1].append(iteration-1)
+        elif model._training_monitor.operation_mode == "test":
+            model._training_monitor.test_test_regions[-1].append(iteration-1)
     ###############
 
     # Save the models training monitor
     with open(f"./model_error_figures/{data_save_file_name}_training_monitors.pkl", 'wb') as file:
-        tmp_var = [
-            online_models._top_power_model._training_monitor,
-            online_models._bottom_power_model._training_monitor,
-            online_models._time_model._training_monitor
-            ]
+        tmp_var = [model._training_monitor for model in online_models._models]
         pickle.dump(tmp_var, file)
 
     # Save the actual models
     with open(f"./model_error_figures/{data_save_file_name}_models.pkl", 'wb') as file:
-        tmp_var = [
-            online_models._top_power_model,
-            online_models._bottom_power_model,
-            online_models._time_model
-            ]
+        tmp_var = [model for model in online_models._models]
         pickle.dump(tmp_var, file)
 
     return online_models
@@ -244,71 +229,3 @@ print("Resultados one:\n")
 online_models_one.print_training_monitor_info()
 print("Resultados adapt:\n")
 online_models_adapt.print_training_monitor_info()
-
-exit()
-
-tmp_top_metric, tmp_bottom_metric, tmp_time_metric = online_models.get_metrics()
-print(
-    f"Training Metrics: {tmp_top_metric} (top) | {tmp_bottom_metric} (bottom)"
-    f" | {tmp_time_metric} (time)"
-)
-
-# Seguir comentando
-
-online_models.test(train_df)
-if args.test_dataset_path is not None:
-    online_models.test(test_df)
-
-# Time measurement logic
-t_end = time.time()
-
-# Print useful information
-print("Total Elapsed Time (s):", t_end-t_start, (t_end-t_start)/train_number_observations)
-print("Number of trainings:", len(train_df))
-
-if args.board == "ZCU":
-    tmp_top_metric, tmp_bottom_metric, tmp_time_metric = \
-        online_models.get_metrics()
-    print(
-        f"Training Metrics: {tmp_top_metric} (top) | {tmp_bottom_metric} (bottom) "
-        f"| {tmp_time_metric} (time)"
-    )
-elif args.board == "PYNQ":
-    tmp_power_metric, tmp_time_metric = online_models.get_metrics()
-    print(f"Training Metrics: {tmp_power_metric} (power) | {tmp_time_metric} (time)")
-
-# Random prediction
-features = {
-    "user": 58.08,
-    "kernel": 33.33,
-    "idle": 8.59,
-    "Main": 2,
-    "aes": 0,
-    "bulk": 0,
-    "crs": 1,
-    "kmp": 0,
-    "knn": 1,
-    "merge": 0,
-    "nw": 1,
-    "queue": 4,
-    "stencil2d": 0,
-    "stencil3d": 0,
-    "strided": 0
-}
-
-if args.board == "ZCU":
-    top_power_prediction, \
-        bottom_power_prediction, \
-        time_prediction = \
-        online_models.predict_one(features)
-
-    print("features:", features)
-
-    print(f"top: {top_power_prediction} | bot: {bottom_power_prediction} | time: {time_prediction}")
-
-elif args.board == "PYNQ":
-    power_prediction, time_prediction = online_models.predict_one(features)
-
-    print("features:", features)
-
-    print(f"power: {power_prediction} | time: {time_prediction}")
