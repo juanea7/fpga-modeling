@@ -18,7 +18,7 @@ from .find_elements import get_closest_element_below
 
 @multimethod
 def read_power_data(path: str, board: str):
-    """ (OPTIMIZED with NumPy) Reads the data from the power consumption file
+    """ Reads the data from the power consumption file
     """
 
     power_data_raw = []
@@ -66,7 +66,7 @@ def read_power_data(path: str, board: str):
 
 @multimethod
 def read_power_data(buffer: memoryview, board: str):
-    """ (OPTIMIZED with NumPy) Reads the data from the power consumption file
+    """ Reads the data from the power consumption file
     """
 
     power_data_raw = []
@@ -143,14 +143,14 @@ def filter_power_data(power_data, enabled, order, fs, cutoff):
     return power_data
 
 
-def process_zcu_power_values_np(power_data_a,
+def process_power_values_zcu(power_data_a,
                                 power_data_b,
                                 power_time,
                                 system_freq,
                                 rshunt_index_a,
                                 rshunt_index_b):
 
-    """ (OPTIMIZED with Numpy) Conver from binary value to actual watts """
+    """ Conver from binary value to actual watts """
 
     # Power conversion formula
     adc_reference_voltage = 2.5
@@ -182,14 +182,14 @@ def process_zcu_power_values_np(power_data_a,
     y_values_a = (power_data_a * power_conversion_factor_a)
     y_values_b = (power_data_b * power_conversion_factor_b)
     # Returns np arrays
-    return x_values, x_values, y_values_a, y_values_b
+    return [x_values, x_values, y_values_a, y_values_b]
 
 
-def process_pynq_power_values_np(power_data,
+def process_power_values_pynq(power_data,
                                  power_time,
                                  system_freq):
 
-    """ (OPTIMIZED with Numpy) Conver from binary value to actual watts """
+    """ Conver from binary value to actual watts """
 
     # Power conversion formula
     adc_reference_voltage = 2.5
@@ -215,12 +215,12 @@ def process_pynq_power_values_np(power_data,
     # Apply the conversion factor to the power values
     y_values = (power_data * power_conversion_factor)
     # Returns np arrays
-    return x_values, y_values
+    return [x_values, y_values]
 
 
 @multimethod
 def read_traces_data(path):
-    """ (OPTIMIZED with Numpy) Reads the data from the traces file """
+    """ Reads the data from the traces file """
 
     # Read binary file as uint32 and reshape to a list of list of 2 elements
     # (value,counter)
@@ -232,7 +232,7 @@ def read_traces_data(path):
 
 @multimethod
 def read_traces_data(buffer: memoryview):
-    """ (OPTIMIZED with Numpy) Reads the data from the traces file """
+    """ Reads the data from the traces file """
 
     # Read binary file as uint32 and reshape to a list of list of 2 elements
     # (value,counter)
@@ -242,8 +242,8 @@ def read_traces_data(buffer: memoryview):
     return events_data_raw
 
 
-def process_traces_data_np(events_data_raw, pos):
-    """ (OPTIMIZED with Numpy) Rebuild the events data """
+def process_traces_data(events_data_raw, pos):
+    """ Rebuild the events data """
 
     # Input format
     # (time in cycles, events for every signal in binary)
@@ -310,7 +310,7 @@ def process_traces_data_np(events_data_raw, pos):
     return events
 
 
-def slice_power_data_np(power_x_data, power_y_data, start_index, end_index):
+def slice_power_data(power_x_data, power_y_data, start_index, end_index):
     """ Slices the power data between given indexes, processing the time to
         be relative to 0
     """
@@ -325,7 +325,7 @@ def slice_power_data_np(power_x_data, power_y_data, start_index, end_index):
     return time_slice, power_slice
 
 
-def slice_traces_data_np(traces_x_data, traces_y_data, start_time, end_time):
+def slice_traces_data(traces_x_data, traces_y_data, start_time, end_time):
     """ Slices the traces data between given time window, processing the time
         to be relative to 0
     """
@@ -392,12 +392,13 @@ def slice_traces_data_np(traces_x_data, traces_y_data, start_time, end_time):
     return return_traces_x_list, return_traces_y_list
 
 
-def process_monitor_data_np_zcu(power_buffer,
-                                traces_buffer,
-                                system_freq,
-                                num_signals,
-                                filtering=False):
-    """ (OPTIMIZED with Numpy) Rebuild the event-based traces signals """
+def process_monitor_data(power_buffer,
+                        traces_buffer,
+                        system_freq,
+                        num_signals,
+                        board,
+                        filtering=False):
+    """ Rebuild the event-based traces signals """
 
     # Path to the input files
     # power_path = input_path + "/CON" + input_id + ".BIN"
@@ -405,33 +406,52 @@ def process_monitor_data_np_zcu(power_buffer,
 
     # POWER
 
-    # Read power data # Optimizar (52ms)->(~1ms)
-    top_power_data, \
-        bottom_power_data, \
-        power_time = read_power_data(power_buffer, "ZCU")
+    # Read power data
+    if board == "ZCU":
+        top_power_data, \
+            bottom_power_data, \
+            power_time = read_power_data(power_buffer, "ZCU")
 
-    # Filter power data
-    top_power_data = filter_power_data(top_power_data,
-                                       filtering,
-                                       16,
-                                       1000000,
-                                       100000)
-    bottom_power_data = filter_power_data(bottom_power_data,
-                                          filtering,
-                                          16,
-                                          1000000,
-                                          100000)
+        # Filter power data
+        top_power_data = filter_power_data(top_power_data,
+                                        filtering,
+                                        16,
+                                        1000000,
+                                        100000)
+        bottom_power_data = filter_power_data(bottom_power_data,
+                                            filtering,
+                                            16,
+                                            1000000,
+                                            100000)
 
-    # Convert to x and y (watts) values | Optimizar (10ms) -> (~2.3ms)
-    top_power_x_values, \
-        bottom_power_x_values, \
-        top_power_y_values, \
-        bottom_power_y_values = process_zcu_power_values_np(top_power_data,
-                                                            bottom_power_data,
-                                                            power_time,
-                                                            system_freq,
-                                                            0,
-                                                            1)
+        # Convert to x and y (watts) values 
+        power_values = process_power_values_zcu(top_power_data,
+                                                bottom_power_data,
+                                                power_time,
+                                                system_freq,
+                                                0,
+                                                1)
+    elif board == "PYNQ":
+        # Read power data
+        power_data, \
+            power_time = read_power_data(power_buffer, "PYNQ")
+
+        # Filter power data
+        power_data = filter_power_data(power_data,
+                                    filtering,
+                                    16,
+                                    1000000,
+                                    100000)
+
+        # Convert to x and y (watts) values
+        power_values = process_power_values_pynq(power_data,
+                                                power_time,
+                                                system_freq)
+    elif board == "AU250":
+        # TODO: Implement this
+        raise ValueError(f"Board not supported: {board}")
+    else:
+        raise ValueError(f"Board not supported: {board}")
 
     # Traces
 
@@ -441,7 +461,7 @@ def process_monitor_data_np_zcu(power_buffer,
     # Process traces data
     traces_data_list = []
     for pos in range(num_signals):
-        traces_data_list.append(process_traces_data_np(events_data_raw, pos))
+        traces_data_list.append(process_traces_data(events_data_raw, pos))
 
     # Unpack traces
     traces_x_values_list = []
@@ -450,87 +470,32 @@ def process_monitor_data_np_zcu(power_buffer,
         traces_x_values_list.append(array[:, 0]/100000)
         traces_y_values_list.append(np.copy(array[:, 1]))
 
-    return top_power_x_values, \
-        top_power_y_values, \
-        bottom_power_x_values, \
-        bottom_power_y_values, \
+    return power_values, \
         traces_x_values_list, \
         traces_y_values_list
 
 
-def process_monitor_data_np_pynq(power_buffer,
-                                 traces_buffer,
-                                 system_freq,
-                                 num_signals,
-                                 filtering=False):
-    """ (OPTIMIZED with Numpy) Rebuild the event-based traces signals """
-
-    # Path to the input files
-    # power_path = input_path + "/CON" + input_id + ".BIN"
-    # traces_path = input_path + "/SIG" + input_id + ".BIN"
-
-    # POWER
-
-    # Read power data # Optimizar (52ms)->(~1ms)
-    power_data, \
-        power_time = read_power_data(power_buffer, "PYNQ")
-
-    # Filter power data
-    power_data = filter_power_data(power_data,
-                                   filtering,
-                                   16,
-                                   1000000,
-                                   100000)
-
-    # Convert to x and y (watts) values | Optimizar (10ms) -> (~2.3ms)
-    power_x_values, \
-        power_y_values = process_pynq_power_values_np(power_data,
-                                                      power_time,
-                                                      system_freq)
-
-    # Traces
-
-    # Read traces data
-    events_data_raw = read_traces_data(traces_buffer)
-
-    # Process traces data
-    traces_data_list = []
-    for pos in range(num_signals):
-        traces_data_list.append(process_traces_data_np(events_data_raw, pos))
-
-    # Unpack traces
-    traces_x_values_list = []
-    traces_y_values_list = []
-    for array in traces_data_list:
-        traces_x_values_list.append(array[:, 0]/100000)
-        traces_y_values_list.append(np.copy(array[:, 1]))
-
-    return power_x_values, \
-        power_y_values, \
-        traces_x_values_list, \
-        traces_y_values_list
-
-
-def fragmentate_monitor_measurements_np_zcu(power_buffer,
+def fragmentate_monitor_measurements_zcu(power_buffer,
                                             traces_buffer,
                                             kernel_combinations):
     """
-    (OPTIMIZED with Numpy) Fragmentates the monitor data to get the info
+    Fragmentates the monitor data to get the info
     corresponding just to each particular kernel combination (slicing the
     CON.BIN and SIG.BIN files)
     """
 
     # Process the monitor data (dual)
-    top_power_x_values,\
+    [top_power_x_values,\
         top_power_y_values,\
         bottom_power_x_values,\
-        bottom_power_y_values,\
+        bottom_power_y_values],\
         traces_x_values_list,\
-        traces_y_values_list = process_monitor_data_np_zcu(power_buffer,
-                                                           traces_buffer,
-                                                           100,
-                                                           16,
-                                                           filtering=False)
+        traces_y_values_list = process_monitor_data(power_buffer,
+                                                    traces_buffer,
+                                                    100,
+                                                    16,
+                                                    board="ZCU",
+                                                    filtering=False)
 
     # Generate the list of lists that will cointaint the sliced power and
     # traces data of each kernel configuration
@@ -538,8 +503,8 @@ def fragmentate_monitor_measurements_np_zcu(power_buffer,
     top_power_y_values_fragments_list = []
     bottom_power_x_values_fragments_list = []
     bottom_power_y_values_fragments_list = []
-    traces_power_x_values_fragments_list = []
-    traces_power_y_values_fragments_list = []
+    traces_x_values_fragments_list = []
+    traces_y_values_fragments_list = []
 
     # For each kernel combination generate the slice power and traces data
     # and append them to a list of lists to be returned later
@@ -559,62 +524,63 @@ def fragmentate_monitor_measurements_np_zcu(power_buffer,
 
         # Slice the top power data between the start and stop position
         new_top_power_x_values, \
-            new_top_power_y_values = slice_power_data_np(top_power_x_values,
-                                                         top_power_y_values,
-                                                         power_start_pos,
-                                                         power_end_pos)
+            new_top_power_y_values = slice_power_data(top_power_x_values,
+                                                    top_power_y_values,
+                                                    power_start_pos,
+                                                    power_end_pos)
 
         # Slice the bottom power data between the start and stop position
         new_bottom_power_x_values, \
             new_bottom_power_y_values = \
-            slice_power_data_np(bottom_power_x_values,
-                                bottom_power_y_values,
-                                power_start_pos,
-                                power_end_pos)
+            slice_power_data(bottom_power_x_values,
+                            bottom_power_y_values,
+                            power_start_pos,
+                            power_end_pos)
 
         # Slice the traces data between the start and stop times
         new_traces_x_values_list, \
             new_traces_y_values_list = \
-            slice_traces_data_np(traces_x_values_list,
-                                 traces_y_values_list,
-                                 top_power_x_values[power_start_pos],
-                                 top_power_x_values[power_end_pos])
+            slice_traces_data(traces_x_values_list,
+                            traces_y_values_list,
+                            top_power_x_values[power_start_pos],
+                            top_power_x_values[power_end_pos])
 
         # Append sliced data to a list of lists in the corresponding sublist
         top_power_x_values_fragments_list.append(new_top_power_x_values)
         top_power_y_values_fragments_list.append(new_top_power_y_values)
         bottom_power_x_values_fragments_list.append(new_bottom_power_x_values)
         bottom_power_y_values_fragments_list.append(new_bottom_power_y_values)
-        traces_power_x_values_fragments_list.append(new_traces_x_values_list)
-        traces_power_y_values_fragments_list.append(new_traces_y_values_list)
+        traces_x_values_fragments_list.append(new_traces_x_values_list)
+        traces_y_values_fragments_list.append(new_traces_y_values_list)
 
     # Return monitor measurement fragments
-    return top_power_x_values_fragments_list,\
+    return [top_power_x_values_fragments_list,\
         top_power_y_values_fragments_list,\
         bottom_power_x_values_fragments_list,\
         bottom_power_y_values_fragments_list,\
-        traces_power_x_values_fragments_list,\
-        traces_power_y_values_fragments_list
+        traces_x_values_fragments_list,\
+        traces_y_values_fragments_list]
 
 
-def fragmentate_monitor_measurements_np_pynq(power_buffer,
-                                             traces_buffer,
-                                             kernel_combinations):
+def fragmentate_monitor_measurements_pynq(power_buffer,
+                                        traces_buffer,
+                                        kernel_combinations):
     """
-    (OPTIMIZED with Numpy) Fragmentates the monitor data to get the info
+    Fragmentates the monitor data to get the info
     corresponding just to each particular kernel combination (slicing the
     CON.BIN and SIG.BIN files)
     """
 
     # Process the monitor data (mono)
-    power_x_values,\
-        power_y_values,\
+    [power_x_values,\
+        power_y_values],\
         traces_x_values_list,\
-        traces_y_values_list = process_monitor_data_np_pynq(power_buffer,
-                                                            traces_buffer,
-                                                            100,
-                                                            16,
-                                                            filtering=False)
+        traces_y_values_list = process_monitor_data(power_buffer,
+                                                    traces_buffer,
+                                                    100,
+                                                    16,
+                                                    board="PYNQ",
+                                                    filtering=False)
 
     # Generate the list of lists that will cointaint the sliced power and
     # traces data of each kernel configuration
@@ -641,18 +607,18 @@ def fragmentate_monitor_measurements_np_pynq(power_buffer,
 
         # Slice the top power data between the start and stop position
         new_power_x_values, \
-            new_power_y_values = slice_power_data_np(power_x_values,
-                                                     power_y_values,
-                                                     power_start_pos,
-                                                     power_end_pos)
+            new_power_y_values = slice_power_data(power_x_values,
+                                                power_y_values,
+                                                power_start_pos,
+                                                power_end_pos)
 
         # Slice the traces data between the start and stop times
         new_traces_x_values_list, \
             new_traces_y_values_list = \
-            slice_traces_data_np(traces_x_values_list,
-                                 traces_y_values_list,
-                                 power_x_values[power_start_pos],
-                                 power_x_values[power_end_pos])
+            slice_traces_data(traces_x_values_list,
+                            traces_y_values_list,
+                            power_x_values[power_start_pos],
+                            power_x_values[power_end_pos])
 
         # Append sliced data to a list of lists in the corresponding sublist
         power_x_values_fragments_list.append(new_power_x_values)
@@ -661,7 +627,33 @@ def fragmentate_monitor_measurements_np_pynq(power_buffer,
         traces_power_y_values_fragments_list.append(new_traces_y_values_list)
 
     # Return monitor measurement fragments
-    return power_x_values_fragments_list,\
+    return [power_x_values_fragments_list,\
         power_y_values_fragments_list,\
         traces_power_x_values_fragments_list,\
-        traces_power_y_values_fragments_list
+        traces_power_y_values_fragments_list]
+
+
+# Map board to functions
+fragmentate_monitor_functions = {
+    "ZCU": fragmentate_monitor_measurements_zcu,
+    "PYNQ": fragmentate_monitor_measurements_pynq,
+    # TODO: Implement AU250
+}
+
+
+def fragmentate_monitor_measurements(power_buffer,
+                                    traces_buffer,
+                                    kernel_combinations,
+                                    board):
+    """
+    Fragmentates the monitor data to get the info
+    corresponding just to each particular kernel combination (slicing the
+    CON.BIN and SIG.BIN files)
+    """
+
+    if board not in fragmentate_monitor_functions:
+        raise ValueError(f"Board not supported: {board}")
+    
+    return fragmentate_monitor_functions[board](power_buffer,
+                                                traces_buffer,
+                                                kernel_combinations)

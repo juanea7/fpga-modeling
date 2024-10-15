@@ -2,5 +2,3 @@
 
 from .process_online_data import generate_observations_from_online_data
 from .generate_features import generate_dataframe_from_observations
-from .generate_features import update_dataframe_with_observations
-from .generate_features import create_update_dataframe_with_observations

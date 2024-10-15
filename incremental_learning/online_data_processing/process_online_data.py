@@ -21,16 +21,14 @@ from .process_kernel_combinations import (
     find_executed_kernel,
 )
 from .process_traces import (
-    fragmentate_monitor_measurements_np_zcu,
-    fragmentate_monitor_measurements_np_pynq,
+    fragmentate_monitor_measurements,
 )
 from .generate_observations import (
-    get_average_observation_features_from_data_np_zcu,
-    get_average_observation_features_from_data_np_pynq,
+    get_average_observation_features_from_data,
 )
 
 
-def generate_observations_from_measurement_window_np(monitor_window,
+def generate_observations_from_measurement_window(monitor_window,
                                                      slot_list,
                                                      power_buffer,
                                                      traces_buffer,
@@ -47,52 +45,21 @@ def generate_observations_from_measurement_window_np(monitor_window,
         (inside fragmentate_monito_measurements())
     """
 
-    # Name of each of the kernels
-    benchmarks = [
-        "aes",
-        "bulk",
-        "crs",
-        "kmp",
-        "knn",
-        "merge",
-        "nw",
-        "queue",
-        "stencil2d",
-        "stencil3d",
-        "strided",
-    ]
-
     # Get the kernel combinations in the monitor measurement
     relative_kernel_combinations = \
         get_kernel_combinations_in_time_window(slot_list, monitor_window)
 
-    if board == "ZCU":
-        # Slice the CON.BIN and SIG.BIN files to contain each of the kernel
-        # combinations
-        new_top_power_x_values_list,\
-            new_top_power_y_values_list,\
-            new_bottom_power_x_values_list,\
-            new_bottom_power_y_values_list,\
-            new_traces_x_values_list_list,\
-            new_traces_y_values_list_list = \
-            fragmentate_monitor_measurements_np_zcu(
-                power_buffer,
-                traces_buffer,
-                relative_kernel_combinations
-            )
-
-    elif board == "PYNQ":
-        # Slice the CON.BIN and SIG.BIN files to contain each of the kernel
-        # combinations
-        new_power_x_values_list,\
-            new_power_y_values_list,\
-            new_traces_x_values_list_list,\
-            new_traces_y_values_list_list = \
-            fragmentate_monitor_measurements_np_pynq(
-                power_buffer,
-                traces_buffer,
-                relative_kernel_combinations
-            )
+    # Slice the CON.BIN and SIG.BIN files to contain each of the kernel
+    # combinations
+    [power_values_lists,\
+        traces_x_values_lists,\
+        traces_y_values_lists] = \
+        fragmentate_monitor_measurements(
+            power_buffer,
+            traces_buffer,
+            relative_kernel_combinations,
+            board
+        )
 
     # Check if the data is relevant enough to be packed
     # If there are less that 4 executions of the kernel, don't care about it
@@ -106,7 +73,7 @@ def generate_observations_from_measurement_window_np(monitor_window,
     #
 
     relevant_executions = []
-    for i, combination in enumerate(new_traces_y_values_list_list):
+    for i, combination in enumerate(traces_y_values_lists):
         relevant_executions.append([])
         for j, slot in enumerate(combination[::2]):
             empty = True
@@ -190,27 +157,17 @@ def generate_observations_from_measurement_window_np(monitor_window,
         # For each of the kernels generate an specific observation
         # (main_tag, top_power, bottom_power, execution_time)
         for kernel in kernels:
-            main_tag = benchmarks.index(kernel.split('-')[0])
+            main_tag = kernel_names.index(kernel.split('-')[0])
             accelerator_position = int(kernel.split('-')[2])
 
-            if board == "ZCU":
-                tmp_obs = get_average_observation_features_from_data_np_zcu(
-                            observation_name,
-                            new_top_power_x_values_list[i],
-                            new_top_power_y_values_list[i],
-                            new_bottom_power_x_values_list[i],
-                            new_bottom_power_y_values_list[i],
-                            new_traces_x_values_list_list[i],
-                            new_traces_y_values_list_list[i],
-                            accelerator_position)
-            elif board == "PYNQ":
-                tmp_obs = get_average_observation_features_from_data_np_pynq(
-                            observation_name,
-                            new_power_x_values_list[i],
-                            new_power_y_values_list[i],
-                            new_traces_x_values_list_list[i],
-                            new_traces_y_values_list_list[i],
-                            accelerator_position)
+            tmp_power_values_lists = [sublist[i] for sublist in power_values_lists]
+            tmp_trace_values_lists = [traces_x_values_lists[i], traces_y_values_lists[i]]
+            tmp_obs = get_average_observation_features_from_data(
+                        observation_name,
+                        tmp_power_values_lists,
+                        tmp_trace_values_lists,
+                        accelerator_position,
+                        board)
 
             tmp_obs.insert(0, main_tag)  # Add main tag to the beginning
 
@@ -260,7 +217,7 @@ def generate_observations_from_online_data(online_data_buffer,
 
     # Extract observations from the measurement window
     #print("estamos aqui")
-    _, _, generated_obs = generate_observations_from_measurement_window_np(
+    _, _, generated_obs = generate_observations_from_measurement_window(
                             measurement_window,
                             executed_kernels,
                             power_buffer,

@@ -35,7 +35,7 @@ def calculate_continuous_series_arithmetic_mean(my_list):
     return np.mean(groups_middle_points)
 
 
-def get_average_observation_features_from_data_np_zcu(observation_name,
+def get_average_observation_features_from_data_zcu(observation_name,
                                                       top_power_x_values,
                                                       top_power_y_values,
                                                       bottom_power_x_values,
@@ -45,7 +45,7 @@ def get_average_observation_features_from_data_np_zcu(observation_name,
                                                       accelerator_position,
                                                       num_signals=16,
                                                       system_freq=100):
-    """ (OPTIMIZED with Numpy) Obtains model features from observations
+    """ Obtains model features from observations
         (performing a mean between all the available executions
     """
 
@@ -113,7 +113,7 @@ def get_average_observation_features_from_data_np_zcu(observation_name,
             execution_time]
 
 
-def get_average_observation_features_from_data_np_pynq(observation_name,
+def get_average_observation_features_from_data_pynq(observation_name,
                                                        power_x_values,
                                                        power_y_values,
                                                        traces_x_values_list,
@@ -121,7 +121,7 @@ def get_average_observation_features_from_data_np_pynq(observation_name,
                                                        accelerator_position,
                                                        num_signals=16,
                                                        system_freq=100):
-    """ (OPTIMIZED with Numpy) Obtains model features from observations
+    """ Obtains model features from observations
         (performing a mean between all the available executions
     """
 
@@ -182,3 +182,32 @@ def get_average_observation_features_from_data_np_pynq(observation_name,
     return [observation_name,
             average_power,
             execution_time]
+
+
+# Map board to functions
+observation_functions = {
+    "ZCU": get_average_observation_features_from_data_zcu,
+    "PYNQ": get_average_observation_features_from_data_pynq,
+    # TODO: Implement AU250
+}
+
+def get_average_observation_features_from_data(observation_name,
+                                                power_values_lists,
+                                                traces_values_lists,
+                                                accelerator_position,
+                                                board,
+                                                num_signals=16,
+                                                system_freq=100):
+    """ Obtains model features from observations
+        (performing a mean between all the available executions
+    """
+
+    if board not in observation_functions:
+        raise ValueError(f"Board not recognized: {board}")
+    
+    return observation_functions[board](observation_name,
+                                        *power_values_lists,
+                                        *traces_values_lists,
+                                        accelerator_position,
+                                        num_signals,
+                                        system_freq)

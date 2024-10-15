@@ -53,67 +53,58 @@ class OnlineModels():
     def __init__(self,
                  board,
                  lock,
-                 input_top_model=None,
-                 input_bottom_model=None,
-                 input_time_model=None):
+                 input_models=None):
         """Initialize each model."""
+
+        # Check if the board is valid and set the number of models
+        # TODO: Implement new boards (AU250)
+        num_models = 3 if board == "ZCU" else 2 if board == "PYNQ" else None
+        if num_models is None:
+            raise ValueError(f"Board {board} not supported.")
+        self._board = board
+        
+        # Get the input models
+        if input_models is None:
+            input_models = [None] * num_models
+        elif len(input_models) != num_models:
+            raise ValueError("The number of input models does not match the number of models.")
+            
+        # Initialize the models
         if board == "ZCU":
-            self._top_power_model = models.TopPowerModel(input_model=input_top_model)
-            self._bottom_power_model = models.BottomPowerModel(input_model=input_bottom_model)
-            self._time_model = models.TimeModel(input_model=input_time_model)
-            self.train = self._train_zcu
-            self.train_adaptative = self._train_adaptative_zcu  # TODO: Remove.
-            self.prueba_adaptative_zcu = self._prueba_adaptative_zcu  # TODO: Remove.
-            self.update_models_zcu = self._update_models_zcu
-            self.print_training_monitor_info = self._print_training_monitor_info # TODO: Remove Test
-            self.grid_search_train = self._grid_search_adaptative_train_zcu
-            self.grid_search_train_multiprocessing = self._grid_search_adaptative_train_zcu_multiprocessing
-            self.train_s = self._train_s_zcu
-            self.predict_one = self._predict_one_zcu
-            self.predict_one_s = self._predict_one_s_zcu
-            self.test = self._test_zcu
-            self.test_s = self._test_s_zcu
-            self.get_metrics = self._get_metrics_zcu
-            # Predition models
-            # (references to the models that are frozen training so simultaneous train and predict
-            #  operations do not colide)
-            self._top_power_prediction_model = self._top_power_model
-            self._bottom_power_prediction_model = self._bottom_power_model
-            self._time_prediction_model = self._time_model
+            self._models = [
+                models.PowerModel("PS",input_model=input_models[0]),
+                models.PowerModel("PL",input_model=input_models[1]),
+                models.TimeModel(input_model=input_models[2])
+                ]
         elif board == "PYNQ":
-            self._power_model = models.TopPowerModel(input_model=input_top_model)
-            self._time_model = models.TimeModel(input_model=input_time_model)
-            self.train = self._train_pynq
-            self.train_s = self._train_s_pynq
-            self.predict_one = self._predict_one_pynq
-            self.predict_one_s = self._predict_one_s_pynq
-            self.test = self._test_pynq
-            self.test_s = self._test_s_pynq
-            self.get_metrics = self._get_metrics_pynq
-            # Predition models
-            # (references to the models that are frozen training so simultaneous train and predict
-            #  operations do not colide)
-            self._power_prediction_model = self._power_model
-            self._time_prediction_model = self._time_model
+            self._models = [
+                models.PowerModel("PS+PL",input_model=input_models[0]),
+                models.TimeModel(input_model=input_models[2])
+                ]
+        else:
+            # TODO: Implement AU250
+            raise ValueError(f"Board {board} not supported.")
+
+        self.update_models = self._update_models
+        self.predict_one = self._predict_one
+        self.get_metrics = self._get_metrics
+        self.test = self._test
+        self.print_training_monitor_info = self._print_training_monitor_info
+        self.grid_search_train = self._grid_search_adaptative_train_zcu
+        self.grid_search_train_multiprocessing = self._grid_search_adaptative_train_zcu_multiprocessing
 
         self._lock = lock
 
-    def _preprocess_dataframe_zcu(self, df):
+    def _preprocess_dataframe(self, df, board):
         """Preprocess a dataframe for train/test."""
 
-        # Format the dataframe
-        features_df, \
-            top_power_labels_df, \
-            bottom_power_labels_df, \
-            time_labels_df = processing.dataset_formating_zcu(df)
+        # Format the dataframe ([features_df, x_model_labels_df, y_model_labels_df, ...])
+        formated_dataset = processing.dataset_formating(df, board)
 
         # Concatenate the DataFrames along the columns axis
-        concatenated_labels_df = pd.concat(
-            [top_power_labels_df, bottom_power_labels_df, time_labels_df],
-            axis=1
-            )
+        concatenated_labels_df = pd.concat(formated_dataset[1:], axis=1)
 
-        return features_df, concatenated_labels_df
+        return formated_dataset[0], concatenated_labels_df
 
     def _features_labels_accommodation(self, features, labels):
         """Perform accomodation on features and labels. Type casting..."""
@@ -137,45 +128,41 @@ class OnlineModels():
         features["stencil3d"] = int(features["stencil3d"])
         features["strided"] = int(features["strided"])
 
-        # Split the concatenated DataFrame into three separate DataFrames
-        top_label = float(labels["Top power"])
-        bottom_label = float(labels["Bottom power"])
-        time_label = float(labels["Time"])
+        # Get each model label
+        labels = [float(labels[key]) for key in labels]
 
-        return features, top_label, bottom_label, time_label
+        return features, labels
 
     def _get_models_state(self):
         """Get the state of the Training Monitor of all the models. [mode, changed]"""
-        top_mode, top_changed =  self._top_power_model.get_state()
-        bottom_mode, bottom_changed =  self._bottom_power_model.get_state()
-        time_mode, time_changed = self._time_model.get_state()
-
-        return top_mode, top_changed, bottom_mode, bottom_changed, time_mode, time_changed
+        return [value for model in self._models for value in model.get_state()]
 
     def _get_models_mode(self):
         """Get the operation modes of the Training Monitor of all the models."""
-        top_mode, _, bottom_mode, _, time_mode, _ = self._get_models_state()
 
-        return top_mode, bottom_mode, time_mode
+        # Get the models mode (even indexes)
+        return self._get_models_state()[::2]
 
     def _sync_models(self):
         """Keep the models in sync"""
 
         # Read operation mode and if the stage has changed
-        top_mode, top_changed, \
-            bottom_mode, bottom_changed, \
-            time_mode, time_changed = self._get_models_state()
+        models_state = self._get_models_state()
+        models_mode = models_state[::2]
+        models_changed = models_state[1::2]
 
         # When no stage changed signal just return the model modes
         # (meaning no models diverge from the "normal" path)
-        if True not in (top_changed, bottom_changed, time_changed):
-            return top_mode, bottom_mode, time_mode
+        if True not in models_changed:
+            return models_mode
 
-        # Create a data structure containing model information to sync them
+        # Get model types for reference
+        models_types = [model._type for model in self._models]
+
+        # Create a data structure containing model information to sync them {model: (mode, changed)}
         sync_info = {
-            "top": (top_mode, top_changed),
-            "bottom": (bottom_mode, bottom_changed),
-            "time": (time_mode, time_changed)
+            key: (mode, changed) 
+            for key, mode, changed in zip(models_types, models_mode, models_changed)
             }
 
         # This dictionary is used for sorting the models based on their mode
@@ -186,9 +173,6 @@ class OnlineModels():
 
         # Sort the dictionary
         sync_info = dict(sorted(sync_info.items(), key=lambda pair: hierarchy[pair[1][0]]))
-
-        # List containing the model names used for reference
-        models_list = ["top", "bottom", "time"]
 
         # Data structure that will contain the actions to perform in the sync
         stage_to_sync = "empty"
@@ -250,7 +234,7 @@ class OnlineModels():
                         models_to_sync.remove(model)
                     else:
                         stage_to_sync = mode
-                        models_to_sync = [x for x in models_list if x != model]
+                        models_to_sync = [x for x in models_types if x != model]
                 else:
                     # Do nothing
                     pass
@@ -281,9 +265,9 @@ class OnlineModels():
                         # in the models_to_sync list, since models in "idle" have remove themshelf
                         # from that list earlier.
                         # Those models are placed in the models_to_clear list
-                        models_to_clear = [x for x in models_list if x not in models_to_sync]
+                        models_to_clear = [x for x in models_types if x not in models_to_sync]
                         stage_to_sync = "empty"
-                        models_to_sync = ["top", "bottom", "time"]
+                        models_to_sync = models_types.copy()
                     else:
                         # Do nothing
                         pass
@@ -297,7 +281,7 @@ class OnlineModels():
                         models_to_sync.remove(model)
                     else:
                         stage_to_sync = mode
-                        models_to_sync = [x for x in models_list if x != model]
+                        models_to_sync = [x for x in models_types if x != model]
                 else:
                     # Do nothing
                     pass
@@ -314,42 +298,28 @@ class OnlineModels():
             # Been here means some models went to idle by at least one is still in test
             # We just clear the stage_changed variable when set
             for model in models_to_clear:
-                if model == "top":
-                    self._top_power_model.clear_stage_changed_flag()
-                elif model == "bottom":
-                    self._bottom_power_model.clear_stage_changed_flag()
-                elif model == "time":
-                    self._time_model.clear_stage_changed_flag()
+                self._models[models_types.index(model)].clear_stage_changed_flag()
             # Return the models modes
-            return top_mode, bottom_mode, time_mode
+            return models_mode
 
         # Make the syncing
         # Models marked as "to_sync" are reset to the proper stage
         # Models not marked as "to_sync" have their stage_changed flag cleared
-        if "top" in models_to_sync:
-            self._top_power_model.reset_to_stage(stage_to_sync)
-        else:
-            self._top_power_model.clear_stage_changed_flag()
-        if "bottom" in models_to_sync:
-            self._bottom_power_model.reset_to_stage(stage_to_sync)
-        else:
-            self._bottom_power_model.clear_stage_changed_flag()
-        if "time" in models_to_sync:
-            self._time_model.reset_to_stage(stage_to_sync)
-        else:
-            self._time_model.clear_stage_changed_flag()
-
-        top_mode, bottom_mode, time_mode = self._get_models_mode()
+        for model in self._models:
+            if model._type in models_to_sync:
+                model.reset_to_stage(stage_to_sync)
+            else:
+                model.clear_stage_changed_flag()
 
         # Return models modes
-        return top_mode, bottom_mode, time_mode
+        return self._get_models_mode()
 
     # TODO: Remove iteration (for plotting)
-    def _train_models_zcu_s(self, train_df, iteration):
+    def _train_models(self, train_df, iteration):
         """(Thread Safe)Test the models with a dataframe. Update the Training Monitor."""
 
         # Preprocess dataframe
-        features_df, concatenated_labels_df = self._preprocess_dataframe_zcu(train_df)
+        features_df, concatenated_labels_df = self._preprocess_dataframe(train_df, self._board)
 
         # Get the number of observations in the df
         obs_to_train = len(train_df)
@@ -370,76 +340,29 @@ class OnlineModels():
             start=1):
 
             # Features and labels accommodation
-            features, top_label, bottom_label, time_label = \
-                self._features_labels_accommodation(features, labels)
+            features, labels = self._features_labels_accommodation(features, labels)
 
-            # Make a prediction
-            y_pred_top = self._top_power_model.predict_one(features)
-            y_pred_bottom = self._bottom_power_model.predict_one(features)
-            y_pred_time = self._time_model.predict_one(features)
-
-            # Train the Top Power model
-            self._top_power_model.train_single(
-                features,
-                top_label,
-                iteration
-            )
-            # Train the Bottom Power model
-            self._bottom_power_model.train_single(
-               features,
-               bottom_label,
-               iteration
-            )
-
-            # Train the Time model
-            self._time_model.train_single(
-               features,
-               time_label,
-               iteration
-            )
-
-            # Update metric
-            self._top_power_model.update_metric(
-                top_label,
-                y_pred_top
-                )
-            self._bottom_power_model.update_metric(
-                bottom_label,
-                y_pred_bottom
-                )
-            self._time_model.update_metric(
-                time_label,
-                y_pred_time
-                )
-
-            # Update the Training Monitor
-            self._top_power_model.update_state(
-                top_label,
-                y_pred_top,
-                iteration
-                )
-            self._bottom_power_model.update_state(
-                bottom_label,
-                y_pred_bottom,
-                iteration
-                )
-            self._time_model.update_state(
-                time_label,
-                y_pred_time,
-                iteration
-                )
+            for model, label in zip(self._models, labels):
+                # Make a prediction
+                y_pred = model.predict_one(features)
+                # Train the model
+                model.train_single(features, label, iteration)
+                # Update metric
+                model.update_metric(label, y_pred)
+                # Update the Training Monitor
+                model.update_state(label, y_pred, iteration)
 
             # Synchronize all the models
-            top_mode, bottom_mode, time_mode = self._sync_models()
+            models_mode = self._sync_models()
 
             # Decide the next mode
-            if not (top_mode == bottom_mode == time_mode):
+            if len(set(models_mode)) > 1:
                 # Models cannot be in different models when in training of after training phase
                 print("[Train] Error, not every model goes to train...")
                 exit()
             else:
                 # Since all the models are in the same mode. We get just the first one
-                next_mode = top_mode
+                next_mode = models_mode[0]
 
             # Increase the iteration counter
             iteration += 1
@@ -450,26 +373,26 @@ class OnlineModels():
                 break
 
         # Acquire lock - Release models
-        with self._lock:
-            self._top_power_prediction_model = self._top_power_model
-            self._bottom_power_prediction_model = self._bottom_power_model
-            self._time_prediction_model = self._time_model
+        # with self._lock:
+        #     self._top_power_prediction_model = self._top_power_model
+        #     self._bottom_power_prediction_model = self._bottom_power_model
+        #     self._time_prediction_model = self._time_model
 
         # Return the next operation mode, de amount of not trained obs, and the iteration count
         return iteration, next_mode, obs_to_train - count
 
     # TODO: Remove iteration (for plotting)
-    def _test_models_zcu_s(self, test_df, iteration):
+    def _test_models(self, test_df, iteration):
         """(Thread Safe) Test the models on a dataframe. Update the Training Monitor."""
 
         # Preprocess dataframe
-        features_df, concatenated_labels_df = self._preprocess_dataframe_zcu(test_df)
+        features_df, concatenated_labels_df = self._preprocess_dataframe(test_df, self._board)
 
         # Get the number of observations in the df
         obs_to_test = len(test_df)
 
         # Some models could be already in idle state, need to be taken into account
-        top_mode, bottom_mode, time_mode = self._get_models_mode()
+        models_mode = self._get_models_mode()
 
         # Acquire lock - Freeze models
         # TODO: el deepcopy cada vez tarda más... segundos
@@ -487,72 +410,30 @@ class OnlineModels():
             start=1):
 
             # Features and labels accommodation
-            features, top_label, bottom_label, time_label = \
-                self._features_labels_accommodation(features, labels)
+            features, labels = self._features_labels_accommodation(features, labels)
 
-            # Top Model
-            if top_mode ==  "test":
-                # Test when in "test" mode
-                top_y_pred = self._top_power_model.predict_one(features)
-                self._top_power_model.update_metric(
-                    top_label,
-                    top_y_pred
-                    )
-                self._top_power_model.update_state(
-                    top_label,
-                    top_y_pred,
-                    iteration
-                    )
-            elif top_mode == "idle":
-                # Increment "idle" current iteration when "idle"
-                self._top_power_model.increment_idle_phase()
-
-            # Bottom Model
-            if bottom_mode ==  "test":
-                # Test when in "test" mode
-                bottom_y_pred = self._bottom_power_model.predict_one(features)
-                self._bottom_power_model.update_metric(
-                    bottom_label,
-                    bottom_y_pred
-                    )
-                self._bottom_power_model.update_state(
-                    bottom_label,
-                    bottom_y_pred,
-                    iteration
-                    )
-            elif bottom_mode == "idle":
-                # Increment "idle" current iteration when "idle"
-                self._bottom_power_model.increment_idle_phase()
-
-            # Time Model
-            if time_mode ==  "test":
-                # Test when in "test" mode
-                time_y_pred = self._time_model.predict_one(features)
-                self._time_model.update_metric(
-                    time_label,
-                    time_y_pred
-                    )
-                self._time_model.update_state(
-                    time_label,
-                    time_y_pred,
-                    iteration
-                    )
-            elif time_mode == "idle":
-                # Increment "idle" current iteration when "idle"
-                self._time_model.increment_idle_phase()
+            for model, label, mode in zip(self._models, labels, models_mode):
+                if mode ==  "test":
+                    # Test when in "test" mode
+                    y_pred = model.predict_one(features)
+                    model.update_metric(label, y_pred)
+                    model.update_state(label, y_pred, iteration)
+                elif mode == "idle":
+                    # Increment "idle" current iteration when "idle"
+                    model.increment_idle_phase()
 
             # Synchronize all the models
-            top_mode, bottom_mode, time_mode = self._sync_models()
+            models_mode = self._sync_models()
 
             # Define next mode for the models
-            if not (top_mode == bottom_mode == time_mode):
+            if len(set(models_mode)) > 1:
                 # When not all are in the same mode.
                 # if al least one model is in "test" we define next mode as "test"
-                if "test" in (top_mode, bottom_mode, time_mode):
+                if "test" in models_mode:
                     next_mode = "test"
             else:
                 # When all models have the same mode we just get the first one
-                next_mode = top_mode
+                next_mode = models_mode[0]
 
             # Update iteration
             iteration += 1
@@ -563,49 +444,64 @@ class OnlineModels():
                 break
 
         # Acquire lock - Release models
-        with self._lock:
-            self._top_power_prediction_model = self._top_power_model
-            self._bottom_power_prediction_model = self._bottom_power_model
-            self._time_prediction_model = self._time_model
+        # with self._lock:
+        #     self._top_power_prediction_model = self._top_power_model
+        #     self._bottom_power_prediction_model = self._bottom_power_model
+        #     self._time_prediction_model = self._time_model
 
         # Return the next operation mode, de amount of not tested obs, and the iteration count
         return iteration, next_mode, obs_to_test - count
 
-    def _get_model_training_monitor_info(self, index):
-        """
-        Return the Training Monitor Info of a model by index
-        indexes = {"top": 0, "bottom": 1, "time": 2}
+    def _predict_one(self, features_dict):
+            """Make a prediction based on given features for each model."""
+
+            # Make a prediction for each model
+            return [model.predict_one(features_dict) for model in self._models]
+
+    def _test(self, test_df, metrics=None):
+        """Format the input observation dataframe and test each model on each
+           of the observations.
         """
 
-        if index == 0:
-            return self._top_power_model.get_info()
-        elif index == 1:
-            return self._bottom_power_model.get_info()
-        elif index == 2:
-            return self._time_model.get_info()
-        else:
-            print(f"[Online Models] Cannot get Training Monitor Info of model with index {index}")
-            exit()
+        # Define the metrics to be used
+        if metrics is None:
+            metrics = [None] * len(self._models)
+
+        # Preprocess the dataframe
+        formated_dataset = processing.dataset_formating(test_df, self._board)
+
+        # Get the features and labels
+        features_df = formated_dataset[0]
+        labels_df_list = formated_dataset[1:]
+
+        # Test each model on the observations
+        return [model.test_batch(features_df, labels_df, metric) for model, labels_df, metric in zip(self._models, labels_df_list, metrics)]
+
+    def _get_metrics(self):
+        """Returns the training error metrics for each model so far."""
+        return [model.metric for model in self._models]
 
     # TODO lock para predicciones y entrenamiento?
-    def _update_models_zcu(self, observations_df, iteration):
+    def _update_models(self, observations_df, iteration):
         """Update the models. Deciding whether to train or test."""
 
         # Get models info used to decide whether to train
-        top_mode, bottom_mode, time_mode = self._get_models_mode()
+        models_mode = self._get_models_mode()
 
         # Decide whether to train or test
-        if top_mode == bottom_mode == time_mode == "train":
+        if all(mode == "train" for mode in models_mode):
             # Train models
-            iteration, mode, non_processed_obs = self._train_models_zcu_s(observations_df,iteration)
-        elif "test" in (top_mode, bottom_mode, time_mode):
+            iteration, mode, non_processed_obs = self._train_models(observations_df,iteration)
+        elif "test" in models_mode:
             # Test models
-            iteration, mode, non_processed_obs = self._test_models_zcu_s(observations_df,iteration)
+            iteration, mode, non_processed_obs = self._test_models(observations_df,iteration)
+        else:
+            raise ValueError("All models are in idle mode. This should not happen.")
 
         # print("[Update Models] Observaciones desperdiciadas:", non_processed_obs)
 
         # Get next operation training monitor info to signal indications to the setup side
-        top_mode, bottom_mode, time_mode = self._get_models_mode()
+        models_mode = self._get_models_mode()
 
         # When mode is "test" it could mean some models are idle an at least one in test
         # That case need to be identify to know which models is in testing and get its information
@@ -616,21 +512,19 @@ class OnlineModels():
         # Set to 0 because when this index doesnt change it means all the models are in the same
         # state, therefore all have the same info, so we get the info from the first one
         model_index = 0
+        # Get the Training Monitor info from the selected model
+        training_monitor_info = self._models[model_index].get_info()
         if mode == "test":
-            # Get info of each model
-            tmp_list = [top_mode, bottom_mode, time_mode]
             # Get the number of different models within the models
-            if len(set(tmp_list)) > 1:
+            if len(set(models_mode)) > 1:
                 # When there is more than one mode it means some models are in "idle" while others
                 # are in "test"
                 # We need to find the one in "test"
-                model_index = tmp_list.index("test")
-
-        # Get the Training Monitor info from the selected model
-        training_monitor_info = self._get_model_training_monitor_info(model_index)
-
+                model_index = models_mode.index("test")
+            # Get the Training Monitor info from the selected model
+            training_monitor_info = self._models[model_index].get_info()
         # We are moving from train or test to an idle stage
-        if mode == "idle":
+        elif mode == "idle":
 
             # Since we are moving to a new fresh idle stage the idle obs left should be
             # way more than the non-processed ones
@@ -655,9 +549,8 @@ class OnlineModels():
             # Update the iteration value with the minimum required to end the test-idle part
             iteration += training_monitor_info["minimum_test_idle_obs_left"]
             # Signal the end of the idle phase (we are assuming the setup works properly)
-            self._top_power_model.end_idle_phase(iteration)
-            self._bottom_power_model.end_idle_phase(iteration)
-            self._time_model.end_idle_phase(iteration)
+            for model in self._models: 
+                model.end_idle_phase(iteration)
 
             # Return action to be commanded to the setup
             return iteration, mode, num_obs_to_be_idle
@@ -677,83 +570,38 @@ class OnlineModels():
         mpl.rcParams['axes.spines.top'] = False
         mpl.rcParams['axes.spines.bottom'] = True
 
-        for model_index in range(3):
+        for model in self._models:
             # Create a 2x2 grid of subplots within the same figure
             fig, ax1 = plt.subplots(nrows=1, ncols=1, sharex=True, constrained_layout=False)
 
             fig.supxlabel('Number of Observations')
             fig.suptitle('Error Metrics!!')
 
-            if model_index == 0:
-                # Add colored background spans to the plot (train)
-                for xmin, xmax in self._top_power_model._training_monitor.train_train_regions:
-                    ax1.axvspan(
-                        xmin, xmax, alpha=0.4,
-                        color=self._top_power_model._training_monitor.train_train_regions_color,
-                        zorder=0
-                        )
-                # Add colored background spans to the plot (test)
-                for xmin, xmax in self._top_power_model._training_monitor.test_test_regions:
-                    ax1.axvspan(
-                        xmin, xmax, alpha=0.4,
-                        color=self._top_power_model._training_monitor.test_test_regions_color,
-                        zorder=0
-                        )
-                # Plot model metrics
-                ax1.plot(
-                    self._top_power_model._training_monitor.train_training_metric_history,
-                    label="adaptative_training_history",
-                    color='tab:green',
-                    zorder=2
+            # Add colored background spans to the plot (train)
+            for xmin, xmax in model._training_monitor.train_train_regions:
+                ax1.axvspan(
+                    xmin, xmax, alpha=0.4,
+                    color=model._training_monitor.train_train_regions_color,
+                    zorder=0
                     )
+            # Add colored background spans to the plot (test)
+            for xmin, xmax in model._training_monitor.test_test_regions:
+                ax1.axvspan(
+                    xmin, xmax, alpha=0.4,
+                    color=model._training_monitor.test_test_regions_color,
+                    zorder=0
+                    )
+            # Plot model metrics
+            ax1.plot(
+                model._training_monitor.train_training_metric_history,
+                label="adaptative_training_history",
+                color='tab:green',
+                zorder=2
+                )
+            if isinstance(model, models.PowerModel):
                 # Set Y limit
                 ax1.set_ylim([-0.5, 14.5])
-            if model_index == 1:
-                # Add colored background spans to the plot (train)
-                for xmin, xmax in self._bottom_power_model._training_monitor.train_train_regions:
-                    ax1.axvspan(
-                        xmin, xmax, alpha=0.4,
-                        color=self._bottom_power_model._training_monitor.train_train_regions_color,
-                        zorder=0
-                        )
-                # Add colored background spans to the plot (test)
-                for xmin, xmax in self._bottom_power_model._training_monitor.test_test_regions:
-                    ax1.axvspan(
-                        xmin, xmax, alpha=0.4,
-                        color=self._bottom_power_model._training_monitor.test_test_regions_color,
-                        zorder=0
-                        )
-                # Plot model metrics
-                ax1.plot(
-                    self._bottom_power_model._training_monitor.train_training_metric_history,
-                    label="adaptative_training_history",
-                    color='tab:green',
-                    zorder=2
-                    )
-                # Set Y limit
-                ax1.set_ylim([-0.5, 14.5])
-            if model_index == 2:
-                # Add colored background spans to the plot (train)
-                for xmin, xmax in self._time_model._training_monitor.train_train_regions:
-                    ax1.axvspan(
-                        xmin, xmax, alpha=0.4,
-                        color=self._time_model._training_monitor.train_train_regions_color,
-                        zorder=0
-                        )
-                # Add colored background spans to the plot (test)
-                for xmin, xmax in self._time_model._training_monitor.test_test_regions:
-                    ax1.axvspan(
-                        xmin, xmax, alpha=0.4,
-                        color=self._time_model._training_monitor.test_test_regions_color,
-                        zorder=0
-                        )
-                # Plot model metrics
-                ax1.plot(
-                    self._time_model._training_monitor.train_training_metric_history,
-                    label="adaptative_training_history",
-                    color='tab:green',
-                    zorder=2
-                    )
+            else:
                 # Set Y limit
                 ax1.set_ylim([-0.5, 60.5])
 
@@ -780,158 +628,16 @@ class OnlineModels():
             # Plot the figure
             plt.show()
 
-    def _train_adaptative_zcu(self, train_df):
-        """Format the input observation dataframe and train each model on each
-           of the observations.
-        """
-
-        # Format the dataframe
-        features_df, \
-            top_power_labels_df, \
-            bottom_power_labels_df, \
-            time_labels_df = processing.dataset_formating_zcu(train_df)
-
-        # Train the Top Power model
-        self._top_power_model.train_batch_adaptative(
-            features_df,
-            top_power_labels_df
-        )
-        # Train the Bottom Power model
-        self._bottom_power_model.train_batch_adaptative(
-            features_df,
-            bottom_power_labels_df
-        )
-        # Train the Time model
-        self._time_model.train_batch_adaptative(
-            features_df,
-            time_labels_df
-        )
-
-    def _prueba_adaptative_zcu(self, train_df, iteration):
-        """Format the input observation dataframe and train each model on each
-           of the observations.
-        """
-
-        # Get actual training monitor state
-        training_monitor_info = self._bottom_power_model.get_info()
-        print("operation_mode:", training_monitor_info["operation_mode"])
-        print(training_monitor_info)
-        # Get lenght of this dataframe
-        df_len = len(train_df)
-
-        # If test-idle
-        # En realidad esto nunca se recibirá, pues el setup esperará M obs de idle
-        # We are not updating the training metric in the idle phase.
-        # But it is not an issue because from the idle phase we go to the test phase
-        # where the metric observed is a new one just for testing
-        if training_monitor_info["operation_mode"] == "idle":
-            # When the actual df has less observations than the minimum required to end the test-idle part
-            if training_monitor_info["minimum_test_idle_obs_left"] > df_len:
-                # update the iteration value with the lenght of the df
-                iteration += df_len
-                # update the test_idle_current_iteration with the lenght of the df
-                self._bottom_power_model.update_idle_phase(df_len)
-                return iteration
-            # When the actual df has more observations than the minimum required to end the test-idle part
-            else:
-                # update the iteration value with the minimum required to end the test-idle part
-                iteration += training_monitor_info["minimum_test_idle_obs_left"]
-                # Signal the end of the test_idle part
-                self._bottom_power_model.end_idle_phase(iteration)
-                # When the observations in the dataframe are exactly the needed for the test-idle part, we just go back
-                if training_monitor_info["minimum_test_idle_obs_left"] == df_len:
-                    return iteration
-                # Jump minimum_test_idle_obs_left obs in the dataframe
-                train_df = train_df.iloc[training_monitor_info["minimum_test_idle_obs_left"]:]
-                # Keep with the rest of the dataframe
-
-        # Format the dataframe
-        features_df, \
-            top_power_labels_df, \
-            bottom_power_labels_df, \
-            time_labels_df = processing.dataset_formating_zcu(train_df)
-
-        # Concatenate the DataFrames along the columns axis
-        concatenated_labels_df = pd.concat(
-            [top_power_labels_df, bottom_power_labels_df, time_labels_df],
-            axis=1
-            )
-
-        # Store next operation
-        operation_mode = training_monitor_info["operation_mode"]
-
-        # Loop over the observations
-        for features, labels in river.stream.iter_pandas(
-            features_df,
-            concatenated_labels_df,
-            shuffle=False,
-            seed=42):
-
-            # Cast variables
-            # Check if there is cpu_usage data in the observations
-            if "user" in features:
-                features["user"] = float(features["user"])
-                features["kernel"] = float(features["kernel"])
-                features["idle"] = float(features["idle"])
-
-            features["Main"] = int(features["Main"])
-            features["aes"] = int(features["aes"])
-            features["bulk"] = int(features["bulk"])
-            features["crs"] = int(features["crs"])
-            features["kmp"] = int(features["kmp"])
-            features["knn"] = int(features["knn"])
-            features["merge"] = int(features["merge"])
-            features["nw"] = int(features["nw"])
-            features["queue"] = int(features["queue"])
-            features["stencil2d"] = int(features["stencil2d"])
-            features["stencil3d"] = int(features["stencil3d"])
-            features["strided"] = int(features["strided"])
-
-            # Split the concatenated DataFrame into three separate DataFrames
-            top_label = float(labels["Top power"])
-            bottom_label = float(labels["Bottom power"])
-            time_label = float(labels["Time"])
-
-            # Make a prediction
-            y_pred = self._bottom_power_model.predict_one(features)
-
-            # TODO: will need to be removed when there is train and test separated functions
-            if operation_mode == "train":
-
-                # Train the Top Power model
-                self._bottom_power_model.train_single(
-                    features,
-                    bottom_label,
-                    iteration
-                )
-
-            operation_mode = self._bottom_power_model.update_state(bottom_label, y_pred, iteration)
-
-            # Do something depending on the .get_info()
-            # Tendrá que haber fuera varias funciones y que dependiendo de lo que .get_info() devuelva
-            # sellamará a esta funcion (train) o a test o se dirá al setup que ejecute x...
-            # Siguiendo el diagrama de interacción dibujado en el ipad
-            ## Hacer esta vaina loca
-
-            ## Return some kind of mesage to the monitor if we need to keep training
-
-            # Update metric
-            self._metric = self._bottom_power_model.update_metric(bottom_label, y_pred)
-
-            iteration += 1
-
-        return iteration
-
     def _grid_search_adaptative_train_zcu(self, train_df, grid_search_params):
         """Format the input observation dataframe and train each model on each
            of the observations.
         """
 
         # Format the dataframe
-        features_df, \
+        [features_df, \
             top_power_labels_df, \
             bottom_power_labels_df, \
-            time_labels_df = processing.dataset_formating_zcu(train_df)
+            time_labels_df] = processing.dataset_formating(train_df, board="ZCU")
 
         # General variables
         outputs_dir = "/media/juan/HDD/tmp/model_error_figures_grid_search"
@@ -1040,8 +746,8 @@ class OnlineModels():
                 print(pretty_dict)
 
                 # Create new models each iteration
-                self._top_power_model = models.TopPowerModel()
-                self._bottom_power_model = models.BottomPowerModel()
+                self._top_power_model = models.PowerModel("PS")
+                self._bottom_power_model = models.PowerModel("PL")
                 self._time_model = models.TimeModel()
 
                 # Train the Top Power model
@@ -1198,10 +904,10 @@ class OnlineModels():
         """
 
         # Format the dataframe
-        features_df, \
+        [features_df, \
             top_power_labels_df, \
             bottom_power_labels_df, \
-            time_labels_df = processing.dataset_formating_zcu(train_df)
+            time_labels_df] = processing.dataset_formating(train_df, board="ZCU")
 
         # General variables
         outputs_dir = "/media/juan/HDD/tmp/model_error_figures_grid_search"
@@ -1323,8 +1029,8 @@ class OnlineModels():
                 ##############
 
                 # Create new models each iteration
-                tmp_top_model = models.TopPowerModel()
-                tmp_bottom_model = models.BottomPowerModel()
+                tmp_top_model = models.PowerModel("PS")
+                tmp_bottom_model = models.PowerModel("PL")
                 tmp_time_model = models.TimeModel()
 
                 results1.append(pool.map_async(tmp_top_model.grid_search_train_batch_multiprocessing, [(features_df, top_power_labels_df, actual_grid_search_params[actual_iteration]),]))
@@ -1480,369 +1186,9 @@ class OnlineModels():
             # Dump the dictionary to the file with indentation for pretty printing
             json.dump(total_json_dict, file, indent=4, cls=MyJSONEncoder)
 
-    def _train_zcu(self, train_df):
-        """Format the input observation dataframe and train each model on each
-           of the observations.
-        """
-
-        # Format the dataframe
-        features_df, \
-            top_power_labels_df, \
-            bottom_power_labels_df, \
-            time_labels_df = processing.dataset_formating_zcu(train_df)
-
-        # Train the Top Power model
-        self._top_power_model.train_batch(
-            features_df,
-            top_power_labels_df
-        )
-        # Train the Bottom Power model
-        self._bottom_power_model.train_batch(
-            features_df,
-            bottom_power_labels_df
-        )
-        # Train the Time model
-        self._time_model.train_batch(
-            features_df,
-            time_labels_df
-        )
-
-    def _train_s_zcu(self, train_df):
-        """(Thread Safe) Format the input observation dataframe and train
-           each model on each of the observations.
-
-           The models are updated in a lock-protected shadow variable
-        """
-
-        # lock-protected shadow variable
-        # TODO: This makes no sense.
-        #       In python, assigning mutable objects (like custom classes) to new variables
-        #       create references, so tmp_model refers to the same as model
-        # TODO: el deepcopy cada vez tarda más... segundos
-        # TODO: Tener en cuenta que podría pasar algo cuando se haga un predict_one mientras se entrena
-        # TODO: Aunque en realidad... sería solo leer. Hay que mirar implementación en riverml
-        # with self._lock:
-        #     tmp_top = copy.deepcopy(self._top_power_model)
-        #     tmp_bot = copy.deepcopy(self._bottom_power_model)
-        #     tmp_time = copy.deepcopy(self._time_model)
-
-        # Format the dataframe
-        features_df, \
-            top_power_labels_df, \
-            bottom_power_labels_df, \
-            time_labels_df = processing.dataset_formating_zcu(train_df)
-
-        # Train the Top Power model
-        tmp_top.train_batch(
-            features_df,
-            top_power_labels_df
-        )
-        # Train the Bottom Power model
-        tmp_bot.train_batch(
-            features_df,
-            bottom_power_labels_df
-        )
-        # Train the Time model
-        tmp_time.train_batch(
-            features_df,
-            time_labels_df
-        )
-
-        # lock-protected shadow variable copy back
-        with self._lock:
-            self._top_power_model = tmp_top
-            self._bottom_power_model = tmp_bot
-            self._time_model = tmp_time
-
-    def _train_pynq(self, train_df):
-        """Format the input observation dataframe and train each model on each
-           of the observations.
-        """
-
-        # Format the dataframe
-        power_features_df, \
-            power_labels_df, \
-            time_features_df, \
-            time_labels_df = \
-            processing.dataset_formating_pynq(train_df)
-
-        # Train the Power model
-        self._power_model.train_batch(
-            power_features_df,
-            power_labels_df
-        )
-        # Train the Time model
-        self._time_model.train_batch(
-            time_features_df,
-            time_labels_df
-        )
-
-    def _train_s_pynq(self, train_df):
-        """(Thread Safe) Format the input observation dataframe and train
-           each model on each of the observations.
-
-           The models are updated in a lock-protected shadow variable
-        """
-
-        # lock-protected shadow variable
-        # TODO: el deepcopy cada vez tarda más... segundos
-        # TODO: Tener en cuenta que podría pasar algo cuando se haga un predict_one mientras se entrena
-        # TODO: Aunque en realidad... sería solo leer. Hay que mirar implementación en riverml
-        # with self._lock:
-        #     tmp_power = copy.deepcopy(self._power_model)
-        #     tmp_time = copy.deepcopy(self._time_model)
-
-        # Format the dataframe
-        power_features_df, \
-            power_labels_df, \
-            time_features_df, \
-            time_labels_df = \
-            processing.dataset_formating_pynq(train_df)
-
-        # Train the Power model
-        tmp_power.train_batch(
-            power_features_df,
-            power_labels_df
-        )
-        # Train the Time model
-        tmp_time.train_batch(
-            time_features_df,
-            time_labels_df
-        )
-
-        # lock-protected shadow variable copy back
-        with self._lock:
-            self._power_model = tmp_power
-            self._time_model = tmp_time
-
-    def _predict_one_zcu(self, features_dict):
-        """Make a prediction based on given features for each model."""
-
-        # Top Power model prediction
-        top_power_prediction = self._top_power_model.predict_one(
-            features_dict
-        )
-        # Bottom Power model prediction
-        bottom_power_prediction = self._bottom_power_model.predict_one(
-            features_dict
-        )
-        # Time model prediction
-        time_prediction = self._time_model.predict_one(
-            features_dict
-        )
-        # Return each prediction
-        return top_power_prediction, bottom_power_prediction, time_prediction
-
-    def _predict_one_pynq(self, features_dict):
-        """Make a prediction based on given features for each model."""
-
-        # Top Power model prediction
-        power_prediction = self._power_model.predict_one(
-            features_dict
-        )
-        # Time model prediction
-        time_prediction = self._time_model.predict_one(
-            features_dict
-        )
-        # Return each prediction
-        return power_prediction, time_prediction
-
-    def _predict_one_s_zcu(self, features_dict):
-        """(Thread Safe) Make a prediction based on given features for each
-           model.
-
-           The predictions are made under a lock.
-        """
-
-        # Acquire the lock
-        with self._lock:
-
-            # Top Power model prediction
-            top_power_prediction = self._top_power_model.predict_one(
-                features_dict
-            )
-            # Bottom Power model prediction
-            bottom_power_prediction = self._bottom_power_model.predict_one(
-                features_dict
-            )
-            # Time model prediction
-            time_prediction = self._time_model.predict_one(
-                features_dict
-            )
-
-        # Return each prediction
-        return top_power_prediction, bottom_power_prediction, time_prediction
-
-    def _predict_one_s_pynq(self, features_dict):
-        """(Thread Safe) Make a prediction based on given features for each
-           model.
-
-           The predictions are made under a lock.
-        """
-
-        # Acquire the lock
-        with self._lock:
-
-            # Power model prediction
-            power_prediction = self._power_model.predict_one(
-                features_dict
-            )
-            # Time model prediction
-            time_prediction = self._time_model.predict_one(
-                features_dict
-            )
-
-        # Return each prediction
-        return power_prediction, time_prediction
-
-    def _test_zcu(self, test_df, metric=(None, None, None)):
-        """Format the input observation dataframe and test each model on each
-           of the observations.
-        """
-
-        features_df, \
-            top_power_labels_df, \
-            bottom_power_labels_df, \
-            time_labels_df = processing.dataset_formating_zcu(test_df)
-
-        top_power_metric = self._top_power_model.test_batch(
-            features_df,
-            top_power_labels_df,
-            metric[0]
-        )
-
-        bottom_power_metric = self._bottom_power_model.test_batch(
-            features_df,
-            bottom_power_labels_df,
-            metric[1]
-        )
-
-        time_metric = self._time_model.test_batch(
-            features_df,
-            time_labels_df,
-            metric[2]
-        )
-
-        # Return the error metric for each of the models when tested with
-        # the observations received as input
-        return top_power_metric, bottom_power_metric, time_metric
-
-    def _test_s_zcu(self, test_df, metric=(None, None, None)):
-        """(Thread Safe) Format the input observation dataframe and test each
-           model on each of the observations.
-        """
-
-        # lock-protected shadow variable
-        # The shadowed variables are not assigned back later because the models
-        # are not updated while testing
-        with self._lock:
-            tmp_top = self._top_power_model
-            tmp_bot = self._bottom_power_model
-            tmp_time = self._time_model
-
-        features_df, \
-            top_power_labels_df, \
-            bottom_power_labels_df, \
-            time_labels_df = \
-            processing.dataset_formating_zcu(test_df)
-
-        top_power_metric = tmp_top.test_batch(
-            features_df,
-            top_power_labels_df,
-            metric[0]
-        )
-
-        bottom_power_metric = tmp_bot.test_batch(
-            features_df,
-            bottom_power_labels_df,
-            metric[1]
-        )
-
-        time_metric = tmp_time.test_batch(
-            features_df,
-            time_labels_df,
-            metric[2]
-        )
-
-        # Return the error metric for each of the models when tested with
-        # the observations received as input
-        return top_power_metric, bottom_power_metric, time_metric
-
-    def _test_s_pynq(self, test_df, metric=(None, None)):
-        """(Thread Safe) Format the input observation dataframe and test each model on each
-           of the observations.
-        """
-
-        # lock-protected shadow variable
-        # The shadowed variables are not assigned back later because the models
-        # are not updated while testing
-        with self._lock:
-            tmp_power = self._power_model
-            tmp_time = self._time_model
-
-        power_features_df, \
-            power_labels_df, \
-            time_features_df, \
-            time_labels_df = \
-            processing.dataset_formating_pynq(test_df)
-
-        power_metric = tmp_power.test_batch(
-            power_features_df,
-            power_labels_df,
-            metric[0]
-        )
-
-        time_metric = tmp_time.test_batch(
-            time_features_df,
-            time_labels_df,
-            metric[1]
-        )
-
-        # Return the error metric for each of the models when tested with
-        # the observations received as input
-        return power_metric, time_metric
-
-    def _test_pynq(self, test_df, metric=(None, None)):
-        """Format the input observation dataframe and test each
-           model on each of the observations.
-        """
-
-        power_features_df, \
-            power_labels_df, \
-            time_features_df, \
-            time_labels_df = \
-            processing.dataset_formating_pynq(test_df)
-
-        power_metric = self._power_model.test_batch(
-            power_features_df,
-            power_labels_df,
-            metric[0]
-        )
-
-        time_metric = self._time_model.test_batch(
-            time_features_df,
-            time_labels_df,
-            metric[1]
-        )
-
-        # Return the error metric for each of the models when tested with
-        # the observations received as input
-        return power_metric, time_metric
-
-    def _get_metrics_zcu(self):
-        """Returns the training error metrics for each model so far."""
-        return self._top_power_model.metric, \
-            self._bottom_power_model.metric, \
-            self._time_model.metric
-
-    def _get_metrics_pynq(self):
-        """Returns the training error metrics for each model so far."""
-        return self._power_model.metric, \
-            self._time_model.metric
-
 
 if __name__ == "__main__":
-
+    # TODO: Update this test
     import threading
 
     # Read observations file

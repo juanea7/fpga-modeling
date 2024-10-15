@@ -1,1 +1,1 @@
-from .models import TopPowerModel, BottomPowerModel, TimeModel
+from .models import PowerModel, TimeModel

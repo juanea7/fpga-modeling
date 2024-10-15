@@ -62,7 +62,7 @@ class Singleton(type):
 
 class TrainingMonitor:
     """Training monitor for re-train and stop-training strategies management"""
-    def __init__(self, model_class):
+    def __init__(self, model_type):
 
         # Operation mode attribute
         self.operation_mode = "train"
@@ -103,23 +103,23 @@ class TrainingMonitor:
         # This will be hardcoded.
         # TODO: Needs to be replaced with the values that generates the best
         #       models, based on what the grid search evaluation says
-        if isinstance(model_class, TopPowerModel):
+        if model_type in ["PS", "PS+PL"]:
             self.train_obs_btw_validation_reduction_factor = 0
             self.train_validation_threshold = 1
             self.train_stable_training_error_threshold = 2
             self.test_test_threshold = 2
             self.test_obs_to_test_reduction_factor = 0
             self.test_significant_error_variation_threshold = 3
-            print("Top model")
-        elif isinstance(model_class, BottomPowerModel):
+            print("PS model")
+        elif model_type in ["PL"]:
             self.train_obs_btw_validation_reduction_factor = 0
             self.train_validation_threshold = 3
             self.train_stable_training_error_threshold = 2
             self.test_test_threshold = 3
             self.test_obs_to_test_reduction_factor = 0
             self.test_significant_error_variation_threshold = 3
-            print("Bottom model")
-        else:
+            print("PL model")
+        elif model_type in ["Time"]:
             self.train_obs_btw_validation_reduction_factor = 0
             self.train_validation_threshold = 3
             self.train_stable_training_error_threshold = 2
@@ -127,6 +127,9 @@ class TrainingMonitor:
             self.test_obs_to_test_reduction_factor = 0
             self.test_significant_error_variation_threshold = 3
             print("Time model")
+        else:
+            raise ValueError(f"Model type '{model_type}' not recognized")
+
 
     def get_info(self):
         """Getter for accessing current training monitor info."""
@@ -704,11 +707,11 @@ class TrainingMonitor:
 
 class Model():
     """Online model implementation (parent class)."""
-    def __init__(self, model, metric):
+    def __init__(self, model, metric, model_type):
         self._model = model
         self._metric = metric
-        self._test = "Parent"
-        self._training_monitor = TrainingMonitor(self)
+        self._type = model_type
+        self._training_monitor = TrainingMonitor(self._type)
 
     def update_state(self, y, y_pred, iteration):
         """
@@ -764,544 +767,6 @@ class Model():
         This only apply to dominant stages (train > test > idle)
         """
         self._training_monitor.reset_to_stage(new_stage)
-
-    def train_batch(self, features_df, labels_df):
-        """Learn all observations within the 'feature_df' dataframe
-           one by one.
-        """
-
-        i = 0
-
-        # TODO: adaptative model testing
-        adaptative_model_data = {}
-        adaptative_model_data["model"] = copy.deepcopy(self._model)     # Copia del modelo
-        adaptative_model_data["operation_mode"] = "train"       # train or test
-        adaptative_model_data["train"] = {}
-        adaptative_model_data["train"]["current_iteration"] = 0
-        adaptative_model_data["train"]["nominal_obs_btw_validation"] = 1000             # Numero inicial de observaciones a entrenar antes de comprobar la validation_metric
-        adaptative_model_data["train"]["actual_obs_btw_validation"] = 1000             # Numero actual de observaciones a entrenar antes de comprobar la validation_metric (se modifica con el reduction_factor)
-        #adaptative_model_data["train"]["obs_btw_validation_reduction_factor"] = 0.2  # Factor por el que se reduce el numero de observaciones entre validaciones si en la anterior validación no se supera threshold
-        adaptative_model_data["train"]["training_metric"] = river.utils.Rolling(river.metrics.MAPE(), window_size=1000)
-        adaptative_model_data["train"]["training_metric_history"] = []
-        adaptative_model_data["train"]["validation_metric"] = 100.0              # Metrica de validación empleada para comprobar si el modelo está suficientemente entrenado
-        #adaptative_model_data["train"]["validation_threshold"] = 2.5               # Validation_error_threshold. Puntos porcentuales, para MAPE
-        adaptative_model_data["train"]["stable_training_error"] = 0              # Contador que indica el numero de veces consecutivas que se supera "validation_threshold"
-        #adaptative_model_data["train"]["stable_training_error_threshold"] = 4    # stable_training_error counter threshold. Habrá que ver cuál cuadra
-        adaptative_model_data["train"]["train_regions"] = []                     # this list contains tuples indicatingn the training regions of the modes [(t0start, t0end), ..., (tnstart, tnend)]
-        adaptative_model_data["train"]["train_regions_color"] = "lightgreen"
-        adaptative_model_data["train"]["start_training"] = True  # This flag is used to know if this is the beginning of the train process to store the iteration number on the train_regions variable for posterior plotting
-        adaptative_model_data["test"] = {}
-        adaptative_model_data["test"]["operation_mode"] = "idle"        # idle or test
-        adaptative_model_data["test"]["current_iteration"] = 0
-        adaptative_model_data["test"]["obs_btw_test"] = 1000             # Numero de observaciones a entrenar antes de comprobar la validation_metric
-        adaptative_model_data["test"]["nominal_obs_to_test"] = 200              # Numero inicial de observaciones a entrenar antes de comprobar la validation_metric
-        adaptative_model_data["test"]["actual_obs_to_test"] = 200              # Numero actual de observaciones a entrenar antes de comprobar la validation_metric (se modifica con el reduction factor)
-        #adaptative_model_data["test"]["obs_to_test_reduction_factor"] = 0.2  # Factor por el que se reduce el numero de observaciones a testear si en el anterior testeo se supera threshold
-        adaptative_model_data["test"]["test_metric"] = river.metrics.MAPE()
-        adaptative_model_data["test"]["test_metric_history"] = []
-        #adaptative_model_data["test"]["test_threshold"] = 2.5               # Validation_error_threshold. Puntos porcentuales, para MAPE
-        adaptative_model_data["test"]["significant_error_variation"] = 0              # Contador que indica el numero de veces consecutivas que se supera "validation_threshold"
-        #adaptative_model_data["test"]["significant_error_variation_threshold"] = 2    # stable_training_error counter threshold. Habrá que ver cuál cuadraadaptative_model_data["train"]["train_regions"] = []                     # this list contains tuples indicaten the training regions of the modes [(t0start, t0end), ..., (tnstart, tnend)]
-        adaptative_model_data["test"]["test_regions"] = []                     # this list contains tuples indicatingn the test in test mode regions of the modes [(t0start, t0end), ..., (tnstart, tnend)]
-        adaptative_model_data["test"]["test_regions_color"] = "orange"
-        adaptative_model_data["frozen"] = {}
-        adaptative_model_data["frozen"]["model"] = copy.deepcopy(self._model)
-        adaptative_model_data["frozen"]["training_metric"] = river.utils.Rolling(river.metrics.MAPE(), window_size=1000)
-        adaptative_model_data["frozen"]["training_metric_history"] = []
-        adaptative_model_data["frozen"]["froze_flag"] = False
-
-        if isinstance(self, TopPowerModel):
-            adaptative_model_data["train"]["obs_btw_validation_reduction_factor"] = 0.2
-            adaptative_model_data["train"]["validation_threshold"] = 1
-            adaptative_model_data["train"]["stable_training_error_threshold"] = 2
-            adaptative_model_data["test"]["test_threshold"] = 2
-            adaptative_model_data["test"]["obs_to_test_reduction_factor"] = 0.2
-            adaptative_model_data["test"]["significant_error_variation_threshold"] = 2
-            print("Top model")
-        elif isinstance(self, BottomPowerModel):
-            adaptative_model_data["train"]["obs_btw_validation_reduction_factor"] = 0.2
-            adaptative_model_data["train"]["validation_threshold"] = 1
-            adaptative_model_data["train"]["stable_training_error_threshold"] = 2
-            adaptative_model_data["test"]["test_threshold"] = 1
-            adaptative_model_data["test"]["obs_to_test_reduction_factor"] = 0.2
-            adaptative_model_data["test"]["significant_error_variation_threshold"] = 2
-            print("Bottom model")
-        else:
-            adaptative_model_data["train"]["obs_btw_validation_reduction_factor"] = 0.3
-            adaptative_model_data["train"]["validation_threshold"] = 3
-            adaptative_model_data["train"]["stable_training_error_threshold"] = 3
-            adaptative_model_data["test"]["test_threshold"] = 6
-            adaptative_model_data["test"]["obs_to_test_reduction_factor"] = 0.2
-            adaptative_model_data["test"]["significant_error_variation_threshold"] = 2
-            print("Time model")
-
-        print("validation_thres: {} | test_thres: {}".format(adaptative_model_data["train"]["validation_threshold"], adaptative_model_data["test"]["test_threshold"]))
-
-        continuous_train_mape_history = []
-
-        for x, y in river.stream.iter_pandas(features_df, labels_df, shuffle=False, seed=42):
-
-            # Cast variables
-            # Check if there is cpu_usage data in the observations
-            if "user" in x:
-                x["user"] = float(x["user"])
-                x["kernel"] = float(x["kernel"])
-                x["idle"] = float(x["idle"])
-
-            x["Main"] = int(x["Main"])
-            x["aes"] = int(x["aes"])
-            x["bulk"] = int(x["bulk"])
-            x["crs"] = int(x["crs"])
-            x["kmp"] = int(x["kmp"])
-            x["knn"] = int(x["knn"])
-            x["merge"] = int(x["merge"])
-            x["nw"] = int(x["nw"])
-            x["queue"] = int(x["queue"])
-            x["stencil2d"] = int(x["stencil2d"])
-            x["stencil3d"] = int(x["stencil3d"])
-            x["strided"] = int(x["strided"])
-            y = float(y)
-
-            #############################
-            ## Test: modelo adaptativo ##
-            #############################
-
-            # Predict with the adaptative model
-            adaptative_model_y_pred = adaptative_model_data["model"].predict_one(x)
-            adaptative_model_data["train"]["training_metric"] = adaptative_model_data["train"]["training_metric"].update(y, adaptative_model_y_pred)
-            adaptative_model_data["train"]["training_metric_history"].append(adaptative_model_data["train"]["training_metric"].get())
-
-            # Frozen model
-            adaptative_model_y_pred_frozen = adaptative_model_data["frozen"]["model"].predict_one(x)
-            adaptative_model_data["frozen"]["training_metric"] = adaptative_model_data["frozen"]["training_metric"].update(y, adaptative_model_y_pred_frozen)
-            adaptative_model_data["frozen"]["training_metric_history"].append(adaptative_model_data["frozen"]["training_metric"].get())
-
-            # Only when in training mode
-            if adaptative_model_data["operation_mode"] == "train":
-                if adaptative_model_data["train"]["start_training"]:
-                    # Mark the iteration of the beginning of the training process
-                    adaptative_model_data["train"]["train_regions"].append([i])
-                    adaptative_model_data["train"]["start_training"] = False
-
-                adaptative_model_data["model"].learn_one(x, y)
-                adaptative_model_data["train"]["current_iteration"] += 1
-
-
-                # Entrenamos el modelo congelado hasta que se congele
-                if adaptative_model_data["frozen"]["froze_flag"] is False:
-                    adaptative_model_data["frozen"]["model"].learn_one(x, y)
-
-                # Wait until x observations elapse
-                if adaptative_model_data["train"]["current_iteration"] == adaptative_model_data["train"]["actual_obs_btw_validation"]:
-                    # Check whether the validation_metric is within the training_metric +- validation_threshold
-                    if (adaptative_model_data["train"]["training_metric"].get() - adaptative_model_data["train"]["validation_threshold"]) <= adaptative_model_data["train"]["validation_metric"] <= (adaptative_model_data["train"]["training_metric"].get() + adaptative_model_data["train"]["validation_threshold"]):
-
-                        adaptative_model_data["train"]["current_iteration"] = 0
-                        # Increment the stable_training_error  counter if the validation_metric is within range
-                        adaptative_model_data["train"]["stable_training_error"] += 1
-                        adaptative_model_data["train"]["actual_obs_btw_validation"] = round(adaptative_model_data["train"]["nominal_obs_btw_validation"] * (1 - adaptative_model_data["train"]["stable_training_error"] * adaptative_model_data["train"]["obs_btw_validation_reduction_factor"]))
-                        print("[validate] actual_obs: {}".format(adaptative_model_data["train"]["actual_obs_btw_validation"]))
-                    else:
-
-                        adaptative_model_data["train"]["current_iteration"] = 0
-                        # Clear the stable_training_error counter and freeze the training_metric inside the validation_metric if the validation_metric is outside range
-                        adaptative_model_data["train"]["stable_training_error"] = 0
-                        adaptative_model_data["train"]["actual_obs_btw_validation"] = adaptative_model_data["train"]["nominal_obs_btw_validation"]
-                        adaptative_model_data["train"]["validation_metric"] = adaptative_model_data["train"]["training_metric"].get()
-                        print("[no validate] actual_obs: {}".format(adaptative_model_data["train"]["actual_obs_btw_validation"]))
-
-                # Stop training when the stable_training_error counter reaches the threshold indicating the model is well trained
-                if adaptative_model_data["train"]["stable_training_error"] == adaptative_model_data["train"]["stable_training_error_threshold"]:
-                    adaptative_model_data["operation_mode"] = "test"
-                    adaptative_model_data["train"]["start_training"] = True
-                    adaptative_model_data["train"]["current_iteration"] = 0
-                    adaptative_model_data["train"]["stable_training_error"] = 0
-                    adaptative_model_data["train"]["actual_obs_btw_validation"] = adaptative_model_data["train"]["nominal_obs_btw_validation"]
-                    print("[to test]actual_obs: {}".format(adaptative_model_data["train"]["actual_obs_btw_validation"]))
-                    # Mark the iteration of the end of the training process
-                    adaptative_model_data["train"]["train_regions"][-1].append(i)
-
-                    # Congelamos para siempre
-                    adaptative_model_data["frozen"]["froze_flag"] = True
-
-                    print("[Adaptative model] Stop Training!! (iter: {})\n\n".format(i))
-
-            else:
-                if adaptative_model_data["test"]["operation_mode"] == "idle":
-
-                    adaptative_model_data["test"]["current_iteration"] += 1
-
-                    if adaptative_model_data["test"]["current_iteration"] == adaptative_model_data["test"]["obs_btw_test"]:
-
-                        adaptative_model_data["test"]["operation_mode"] = "test"
-                        adaptative_model_data["test"]["current_iteration"] = 0
-                        adaptative_model_data["test"]["test_metric"] = river.metrics.MAPE()
-                        adaptative_model_data["test"]["test_metric_history"] = []
-                        adaptative_model_data["test"]["significant_error_variation"] = 0
-                        # Mark the iteration of the beginning of the test process
-                        adaptative_model_data["test"]["test_regions"].append([i])
-
-                else:
-
-                    adaptative_model_data["test"]["current_iteration"] += 1
-
-                    # Predict with the adaptative model
-                    adaptative_model_data["test"]["test_metric"].update(y, adaptative_model_y_pred)
-                    adaptative_model_data["test"]["test_metric_history"].append(adaptative_model_data["test"]["test_metric"].get())
-
-                    if adaptative_model_data["test"]["current_iteration"] == adaptative_model_data["test"]["actual_obs_to_test"]:
-
-                        tmp_test_condition = ( (adaptative_model_data["train"]["validation_metric"] - adaptative_model_data["test"]["test_threshold"]) <= adaptative_model_data["test"]["test_metric"].get() <= (adaptative_model_data["train"]["validation_metric"] + adaptative_model_data["test"]["test_threshold"]) )
-
-                        if tmp_test_condition is False:
-                            adaptative_model_data["test"]["current_iteration"] = 0
-                            adaptative_model_data["test"]["significant_error_variation"] += 1
-                            adaptative_model_data["test"]["actual_obs_to_test"] = round(adaptative_model_data["test"]["nominal_obs_to_test"] * (1 - adaptative_model_data["test"]["significant_error_variation"] * adaptative_model_data["test"]["obs_to_test_reduction_factor"]))
-                            print("[test wrong] actual_obs: {}".format(adaptative_model_data["test"]["actual_obs_to_test"]))
-                        else:
-                            adaptative_model_data["test"]["current_iteration"] = 0
-                            adaptative_model_data["test"]["operation_mode"] = "idle"
-                            adaptative_model_data["test"]["current_iteration"] = 0
-                            adaptative_model_data["test"]["actual_obs_to_test"] = adaptative_model_data["test"]["nominal_obs_to_test"]
-                            # Mark the iteration of the end of the test process
-                            adaptative_model_data["test"]["test_regions"][-1].append(i)
-                            print("[test right] actual_obs: {}".format(adaptative_model_data["test"]["actual_obs_to_test"]))
-
-                    # Go to train when significant_error_variation reaches a threshold indicating the model is not performing properly
-                    if adaptative_model_data["test"]["significant_error_variation"] == adaptative_model_data["test"]["significant_error_variation_threshold"]:
-                        adaptative_model_data["operation_mode"] = "train"
-                        adaptative_model_data["test"]["operation_mode"] = "idle"
-                        adaptative_model_data["test"]["current_iteration"] = 0
-                        adaptative_model_data["test"]["test_metric"] = river.metrics.MAPE()
-                        adaptative_model_data["test"]["test_metric_history"] = []
-                        adaptative_model_data["test"]["significant_error_variation"] = 0
-                        adaptative_model_data["test"]["actual_obs_to_test"] = adaptative_model_data["test"]["nominal_obs_to_test"]
-                        adaptative_model_data["train"]["validation_metric"] = adaptative_model_data["train"]["training_metric"].get()
-                        # Mark the iteration of the end of the test process
-                        adaptative_model_data["test"]["test_regions"][-1].append(i)
-                        print("[Adaptative model] Back to Training!! (iter: {})\n\n".format(i))
-                        print("[to train] actual_obs: {}".format(adaptative_model_data["test"]["actual_obs_to_test"]))
-
-            #print("[Adaptative model - train] train?: {} | cur_iter: {} | train_metric: {} | validation_metric: {} | stable_training_error: {} | stable_training_error_threshold: {}".format(adaptative_model_data["operation_mode"] == "train", adaptative_model_data["train"]["current_iteration"], adaptative_model_data["train"]["training_metric"].get(), adaptative_model_data["train"]["validation_metric"], adaptative_model_data["train"]["stable_training_error"], adaptative_model_data["train"]["stable_training_error_threshold"]))
-            #print("[Adaptative model - test]  test?: {} | mode: {} | cur_iter: {} | test_metric: {} | validation_metric: {} | sign_error_variation: {} | sign_error_variation_threshold: {}".format(adaptative_model_data["operation_mode"] == "test", adaptative_model_data["test"]["operation_mode"], adaptative_model_data["test"]["current_iteration"], adaptative_model_data["test"]["test_metric"].get(), adaptative_model_data["train"]["validation_metric"], adaptative_model_data["test"]["significant_error_variation"], adaptative_model_data["test"]["significant_error_variation_threshold"]))
-
-            # Make prediction
-            y_pred = self._model.predict_one(x)
-            # Update metric
-            self._metric = self._metric.update(y, y_pred)
-            # Learn from observation
-            self._model = self._model.learn_one(x, y)
-
-            # Store metric history (for plotting)
-            continuous_train_mape_history.append(self._metric.get())
-
-            print("Iter #{}".format(i))
-            #print("Iter #{} | Real y: {} | Pred y: {} | metric: {}".format(i, y, y_pred, self._metric))
-
-            i += 1
-
-        # When there are no more obs the system is either in train or test mode. We need fill the last test/train_region list with the actual iteration
-        if adaptative_model_data["operation_mode"] == "train":
-            adaptative_model_data["train"]["train_regions"][-1].append(i-1)
-        elif adaptative_model_data["test"]["operation_mode"] == "test":
-            adaptative_model_data["test"]["test_regions"][-1].append(i-1)
-
-        print("Training regions: {}".format(adaptative_model_data["train"]["train_regions"]))
-        print("Test regions: {}".format(adaptative_model_data["test"]["test_regions"]))
-
-        # Matplotlib configuration
-        mpl.rcParams['figure.figsize'] = (20, 12)
-        # Remove top and right frame
-        mpl.rcParams['axes.spines.left'] = True
-        mpl.rcParams['axes.spines.right'] = False
-        mpl.rcParams['axes.spines.top'] = False
-        mpl.rcParams['axes.spines.bottom'] = True
-
-        # Conver to np array for being able to substract the list by elements
-        continuous_train_mape_history = np.array(continuous_train_mape_history)
-        adaptative_model_data["train"]["training_metric_history"] = np.array(adaptative_model_data["train"]["training_metric_history"])
-        adaptative_model_data["frozen"]["training_metric_history"] = np.array(adaptative_model_data["frozen"]["training_metric_history"])
-
-        # Create a 2x2 grid of subplots within the same figure
-        fig, ax1 = plt.subplots(nrows=1, ncols=1, sharex=True, constrained_layout=False)
-
-        fig.supxlabel('Number of Observations')
-        fig.suptitle('Error Metrics!!')
-
-        adaptative_mape_difference = adaptative_model_data["frozen"]["training_metric_history"] - adaptative_model_data["train"]["training_metric_history"]
-
-        # Add colored background spans to the plot (train)
-        for xmin, xmax in adaptative_model_data["train"]["train_regions"]:
-            ax1.axvspan(xmin, xmax, alpha=0.4, color=adaptative_model_data["train"]["train_regions_color"], zorder=0)
-        # Add colored background spans to the plot (test)
-        for xmin, xmax in adaptative_model_data["test"]["test_regions"]:
-            ax1.axvspan(xmin, xmax, alpha=0.4, color=adaptative_model_data["test"]["test_regions_color"], zorder=0)
-
-        # Plot models metrics
-        ax1.plot(continuous_train_mape_history, label="continuous_train_mape", color='tab:orange', zorder=1)
-        ax1.plot(adaptative_model_data["frozen"]["training_metric_history"], label="frozen_adaptative_training_history", color='tab:blue', zorder=2)
-        ax1.plot(adaptative_model_data["train"]["training_metric_history"], label="adaptative_training_history", color='tab:green', zorder=3)
-        ax1.set_ylabel("% error", color='k')
-        ax1.tick_params(axis='y', labelcolor='k')
-        #ax1.set_ylim([-0.5, 350.5])
-        #ax1.set_ylim([-0.5, 120.5])
-        # Choose the y_lim depending on the models (they have different ranges of errors)
-        if isinstance(self, TimeModel):
-            ax1.set_ylim([-0.5, 80.5])
-        else:
-            ax1.set_ylim([-0.5, 27.5])
-        ax1.grid(True)
-
-        # Add a new axis with the diff of the error between the adaptative model and its frozen version
-        ax1_diff = ax1.twinx()
-        ax1_diff.plot(adaptative_mape_difference, label="adaptative_diff_mape", color='tab:red', zorder=3)
-        ax1_diff.set_ylabel("% error", color='tab:red')
-        ax1_diff.tick_params(axis='y', labelcolor='tab:red')
-        #ax1_diff.set_ylim([-256.5, 85.5])
-        #ax1_diff.set_ylim([-80.5, 40.5])
-        # Choose the y_lim depending on the models (they have different ranges of errors)
-        if isinstance(self, TimeModel):
-            ax1_diff.set_ylim([-120.5, 40.5])
-        else:
-            ax1_diff.set_ylim([-45.5, 15.5])
-
-        # Adding legend for both y-axes
-        lines1, labels1 = ax1.get_legend_handles_labels()
-        lines1_diff, labels1_diff = ax1_diff.get_legend_handles_labels()
-
-        lines1_all = lines1 + lines1_diff
-        labels1_all = labels1 + labels1_diff
-        ax1.legend(lines1_all, labels1_all, loc="best")
-
-        plt.tight_layout()  # Adjust subplot spacing
-
-        # Save figure
-        #python program to check if a path exists
-        #if it doesn’t exist we create one
-        model_error_figures_dir = "./model_error_figures"
-        if not os.path.exists(model_error_figures_dir):
-            os.makedirs(model_error_figures_dir)
-
-        figure_save_file_name = input("Give me name to save this figure with (path:{}/<name>.pkl): ".format(model_error_figures_dir))
-        with open("{}/{}.pkl".format(model_error_figures_dir, figure_save_file_name), 'wb') as f:
-            pickle.dump(fig, f)
-
-        plt.show()
-
-        # print(self._metric)
-
-        # print("\nPredict One Time: {} ms (mean) | {} ms (last)".format(
-        #     (predict_one_total_time/1000000)/len(features_df),
-        #     (t1_predict_one-t0_predict_one)/1000000)
-        # )
-        # print("Metrics Update Time: {} ms (mean) | {} ms (last)".format(
-        #     (update_metric_total_time/1000000)/len(features_df),
-        #     (t1_update_metric-t0_update_metric)/1000000)
-        # )
-        # print("Learn One Time: {} ms (mean) | {} ms (last)\n".format(
-        #     (learn_one_total_time/1000000)/len(features_df),
-        #     (t1_learn_one-t0_learn_one)/1000000)
-        # )
-
-
-    def train_single(self, features, label, i):
-        """Learn just one observation from a dictionary.
-        """
-
-        #############################
-        ## Test: modelo adaptativo ##
-        #############################
-
-        # Pensar la forma correcta de gestionar esto on-chip
-        # Tener en cuenta que va a haber tres modelos diferentes y si alguno
-        # de ellos debe entrenarse el modo general será entrenar... que hacer
-        # con los otros dos? Es un problema entrenar un modelo que en teoria
-        # ya no debería estar entrenandose? entrenamos solo el que hay que entrenar?
-        # Se van a desacompasar... no se
-
-        # Predict with the adaptative model
-        #y_pred = self._model.predict_one(features)
-
-        #train_model = self._training_monitor.update(label, y_pred, i)
-
-        #if train_model:
-        #    self._model.learn_one(features, label)
-
-        self._model.learn_one(features, label)
-
-        # Update metric
-        #self._metric = self._metric.update(label, y_pred)
-
-        # print("Iter #{}".format(i))
-        #print("Iter #{} | Real y: {} | Pred y: {} | metric: {}".format(i, y, y_pred, self._metric))
-
-        # print(self._metric)
-
-        # print("\nPredict One Time: {} ms (mean) | {} ms (last)".format(
-        #     (predict_one_total_time/1000000)/len(features_df),
-        #     (t1_predict_one-t0_predict_one)/1000000)
-        # )
-        # print("Metrics Update Time: {} ms (mean) | {} ms (last)".format(
-        #     (update_metric_total_time/1000000)/len(features_df),
-        #     (t1_update_metric-t0_update_metric)/1000000)
-        # )
-        # print("Learn One Time: {} ms (mean) | {} ms (last)\n".format(
-        #     (learn_one_total_time/1000000)/len(features_df),
-        #     (t1_learn_one-t0_learn_one)/1000000)
-        # )
-
-    def train_batch_adaptative(self, features_df, labels_df):
-        """Learn all observations within the 'feature_df' dataframe
-           one by one.
-        """
-
-        i = 0
-
-        # TODO: adaptative model testing
-
-        adaptative_model = copy.deepcopy(self._model)     # Copia del modelo
-
-        continuous_train_mape_history = []
-
-        for x, y in river.stream.iter_pandas(features_df, labels_df, shuffle=False, seed=42):
-
-            # Cast variables
-            # Check if there is cpu_usage data in the observations
-            if "user" in x:
-                x["user"] = float(x["user"])
-                x["kernel"] = float(x["kernel"])
-                x["idle"] = float(x["idle"])
-
-            x["Main"] = int(x["Main"])
-            x["aes"] = int(x["aes"])
-            x["bulk"] = int(x["bulk"])
-            x["crs"] = int(x["crs"])
-            x["kmp"] = int(x["kmp"])
-            x["knn"] = int(x["knn"])
-            x["merge"] = int(x["merge"])
-            x["nw"] = int(x["nw"])
-            x["queue"] = int(x["queue"])
-            x["stencil2d"] = int(x["stencil2d"])
-            x["stencil3d"] = int(x["stencil3d"])
-            x["strided"] = int(x["strided"])
-            y = float(y)
-
-            #############################
-            ## Test: modelo adaptativo ##
-            #############################
-
-            # Pensar la forma correcta de gestionar esto on-chip
-            # Tener en cuenta que va a haber tres modelos diferentes y si alguno
-            # de ellos debe entrenarse el modo general será entrenar... que hacer
-            # con los otros dos? Es un problema entrenar un modelo que en teoria
-            # ya no debería estar entrenandose? entrenamos solo el que hay que entrenar?
-            # Se van a desacompasar... no se
-
-            # Predict with the adaptative model
-            adaptative_model_y_pred = adaptative_model.predict_one(x)
-
-            train_model = self._training_monitor.update(y, adaptative_model_y_pred, i)
-
-            if train_model:
-                adaptative_model.learn_one(x, y)
-
-            # print("[Adaptative model - train] train?: {} | cur_iter: {} | train_metric: {} | validation_metric: {} | stable_training_error: {} | stable_training_error_threshold: {}".format(adaptative_model_data["operation_mode"] == "train", adaptative_model_data["train"]["current_iteration"], adaptative_model_data["train"]["training_metric"].get(), adaptative_model_data["train"]["validation_metric"], adaptative_model_data["train"]["stable_training_error"], adaptative_model_data["train"]["stable_training_error_threshold"]))
-            # print("[Adaptative model - test]  test?: {} | mode: {} | cur_iter: {} | test_metric: {} | validation_metric: {} | sign_error_variation: {} | sign_error_variation_threshold: {}".format(adaptative_model_data["operation_mode"] == "test", adaptative_model_data["test"]["operation_mode"], adaptative_model_data["test"]["current_iteration"], adaptative_model_data["test"]["test_metric"].get(), adaptative_model_data["train"]["validation_metric"], adaptative_model_data["test"]["significant_error_variation"], adaptative_model_data["test"]["significant_error_variation_threshold"]))
-
-            # Make prediction
-            y_pred = self._model.predict_one(x)
-            # Update metric
-            self._metric = self._metric.update(y, y_pred)
-            # Learn from observation
-            self._model = self._model.learn_one(x, y)
-
-            # Store metric history (for plotting)
-            continuous_train_mape_history.append(self._metric.get())
-
-            print("Iter #{}".format(i))
-            #print("Iter #{} | Real y: {} | Pred y: {} | metric: {}".format(i, y, y_pred, self._metric))
-
-            i += 1
-
-        # When there are no more obs the system is either in train or test mode. We need fill the last test/train_region list with the actual iteration
-        if self._training_monitor.operation_mode == "train":
-            self._training_monitor.train_train_regions[-1].append(i-1)
-        elif self._training_monitor.test_operation_mode == "test":
-            self._training_monitor.test_test_regions[-1].append(i-1)
-
-        print("Training regions: {}".format(self._training_monitor.train_train_regions))
-        print("Test regions: {}".format(self._training_monitor.test_test_regions))
-
-        # Matplotlib configuration
-        mpl.rcParams['figure.figsize'] = (20, 12)
-        # Remove top and right frame
-        mpl.rcParams['axes.spines.left'] = True
-        mpl.rcParams['axes.spines.right'] = False
-        mpl.rcParams['axes.spines.top'] = False
-        mpl.rcParams['axes.spines.bottom'] = True
-
-        # Conver to np array for being able to substract the list by elements
-        continuous_train_mape_history = np.array(continuous_train_mape_history)
-        self._training_monitor.train_training_metric_history = np.array(self._training_monitor.train_training_metric_history)
-
-        # Create a 2x2 grid of subplots within the same figure
-        fig, ax1 = plt.subplots(nrows=1, ncols=1, sharex=True, constrained_layout=False)
-
-        fig.supxlabel('Number of Observations')
-        fig.suptitle('Error Metrics!!')
-
-        # Add colored background spans to the plot (train)
-        for xmin, xmax in self._training_monitor.train_train_regions:
-            ax1.axvspan(xmin, xmax, alpha=0.4, color=self._training_monitor.train_train_regions_color, zorder=0)
-        # Add colored background spans to the plot (test)
-        for xmin, xmax in self._training_monitor.test_test_regions:
-            ax1.axvspan(xmin, xmax, alpha=0.4, color=self._training_monitor.test_test_regions_color, zorder=0)
-
-        # Plot models metrics
-        ax1.plot(continuous_train_mape_history, label="continuous_train_mape", color='tab:orange', zorder=1)
-        ax1.plot(self._training_monitor.train_training_metric_history, label="adaptative_training_history", color='tab:green', zorder=2)
-        ax1.set_ylabel("% error", color='k')
-        ax1.tick_params(axis='y', labelcolor='k')
-        #ax1.set_ylim([-0.5, 350.5])
-        #ax1.set_ylim([-0.5, 120.5])
-        # Choose the y_lim depending on the models (they have different ranges of errors)
-        if isinstance(self, TimeModel):
-            ax1.set_ylim([-0.5, 60.5])
-        else:
-            ax1.set_ylim([-0.5, 14.5])
-        ax1.grid(True)
-
-        ax1.legend()
-
-        plt.tight_layout()  # Adjust subplot spacing
-
-        # Save figure
-        #python program to check if a path exists
-        #if it doesn’t exist we create one
-        model_error_figures_dir = "./model_error_figures"
-        if not os.path.exists(model_error_figures_dir):
-            os.makedirs(model_error_figures_dir)
-
-        figure_save_file_name = input("Give me name to save this figure with (path:{}/<name>.pkl): ".format(model_error_figures_dir))
-        with open("{}/{}.pkl".format(model_error_figures_dir, figure_save_file_name), 'wb') as f:
-            pickle.dump(fig, f)
-
-        plt.show()
-
-        # print(self._metric)
-
-        # print("\nPredict One Time: {} ms (mean) | {} ms (last)".format(
-        #     (predict_one_total_time/1000000)/len(features_df),
-        #     (t1_predict_one-t0_predict_one)/1000000)
-        # )
-        # print("Metrics Update Time: {} ms (mean) | {} ms (last)".format(
-        #     (update_metric_total_time/1000000)/len(features_df),
-        #     (t1_update_metric-t0_update_metric)/1000000)
-        # )
-        # print("Learn One Time: {} ms (mean) | {} ms (last)\n".format(
-        #     (learn_one_total_time/1000000)/len(features_df),
-        #     (t1_learn_one-t0_learn_one)/1000000)
-        # )
 
     def grid_search_train_batch(self, features_df, labels_df, grid_search_parameters):
         """Learn all observations within the 'feature_df' dataframe
@@ -1360,12 +825,7 @@ class Model():
         adaptative_model_data["test"]["significant_error_variation_threshold"] = grid_search_parameters["parameters"]["test"]["significant_error_variation_threshold"]
 
         # Print model type
-        if isinstance(self, TopPowerModel):
-            print("\nTop Power Model")
-        elif isinstance(self, BottomPowerModel):
-            print("\nBottom Power Model")
-        elif isinstance(self, TimeModel):
-            print("\nExecution Time Model")
+        print(self._type)
 
         # List for storing continuously trained model metrics
         continuous_train_mape_history = []
@@ -1550,19 +1010,11 @@ class Model():
         adaptative_model_data["train"]["training_metric_history"] = np.array(adaptative_model_data["train"]["training_metric_history"])
         adaptative_model_data["frozen"]["training_metric_history"] = np.array(adaptative_model_data["frozen"]["training_metric_history"])
 
-        # Decide the name of the figure based on the type of the model we are currently working with
-        if isinstance(self, TopPowerModel):
-            model_type = "top"
-        elif isinstance(self, BottomPowerModel):
-            model_type = "bottom"
-        else:
-            model_type = "time"
-
         # Create a 2x2 grid of subplots within the same figure
         fig, ax1 = plt.subplots(nrows=1, ncols=1, sharex=True, constrained_layout=False)
 
         fig.supxlabel('Number of Observations')
-        fig.suptitle("{} model - iteration #{}".format(model_type, grid_search_parameters["iteration"]))
+        fig.suptitle("{} model - iteration #{}".format(self._type, grid_search_parameters["iteration"]))
 
         adaptative_mape_difference = adaptative_model_data["frozen"]["training_metric_history"] - adaptative_model_data["train"]["training_metric_history"]
 
@@ -1582,7 +1034,7 @@ class Model():
         #ax1.set_ylim([-0.5, 350.5])
         #ax1.set_ylim([-0.5, 120.5])
         # Choose the y_lim depending on the models (they have different ranges of errors)
-        if isinstance(self, TimeModel):
+        if self._type == "Time":
             ax1.set_ylim([-0.5, 80.5])
         else:
             ax1.set_ylim([-0.5, 27.5])
@@ -1596,7 +1048,7 @@ class Model():
         #ax1_diff.set_ylim([-256.5, 85.5])
         #ax1_diff.set_ylim([-80.5, 40.5])
         # Choose the y_lim depending on the models (they have different ranges of errors)
-        if isinstance(self, TimeModel):
+        if self._type == "Time":
             ax1_diff.set_ylim([-120.5, 40.5])
         else:
             ax1_diff.set_ylim([-45.5, 15.5])
@@ -1619,7 +1071,7 @@ class Model():
             os.makedirs(model_error_figures_dir, exist_ok=True)
 
         # Save figure
-        figure_save_path = "{}/{}.pkl".format(model_error_figures_dir, model_type)
+        figure_save_path = "{}/{}.pkl".format(model_error_figures_dir, self._type)
         with open(figure_save_path, 'wb') as f:
             pickle.dump(fig, f)
 
@@ -1709,15 +1161,7 @@ class Model():
         adaptative_model_data["test"]["significant_error_variation_threshold"] = grid_search_parameters["parameters"]["test"]["significant_error_variation_threshold"]
 
         # Decide the name of the figure based on the type of the model we are currently working with
-        if isinstance(self, TopPowerModel):
-            model_type = "top"
-            print("\n[Iteration #{}] Top Power Model".format(grid_search_parameters["iteration"]))
-        elif isinstance(self, BottomPowerModel):
-            model_type = "bottom"
-            print("\n[Iteration #{}] Bottom Power Model".format(grid_search_parameters["iteration"]))
-        elif isinstance(self, TimeModel):
-            model_type = "time"
-            print("\n[Iteration #{}] Execution Time Model".format(grid_search_parameters["iteration"]))
+        print(self._type)
 
         # List for storing continuously trained model metrics
         continuous_train_mape_history = []
@@ -1926,7 +1370,7 @@ class Model():
         #ax1.set_ylim([-0.5, 350.5])
         #ax1.set_ylim([-0.5, 120.5])
         # Choose the y_lim depending on the models (they have different ranges of errors)
-        if isinstance(self, TimeModel):
+        if self._type == "Time":
             ax1.set_ylim([-0.5, 80.5])
         else:
             ax1.set_ylim([-0.5, 27.5])
@@ -1940,7 +1384,7 @@ class Model():
         #ax1_diff.set_ylim([-256.5, 85.5])
         #ax1_diff.set_ylim([-80.5, 40.5])
         # Choose the y_lim depending on the models (they have different ranges of errors)
-        if isinstance(self, TimeModel):
+        if self._type == "Time":
             ax1_diff.set_ylim([-120.5, 40.5])
         else:
             ax1_diff.set_ylim([-45.5, 15.5])
@@ -1963,7 +1407,7 @@ class Model():
             os.makedirs(model_error_figures_dir, exist_ok=True)
 
         # Save figure
-        figure_save_path = "{}/{}.pkl".format(model_error_figures_dir, model_type)
+        figure_save_path = "{}/{}.pkl".format(model_error_figures_dir, self._type)
         with open(figure_save_path, 'wb') as f:
             pickle.dump(fig, f)
 
@@ -1993,6 +1437,12 @@ class Model():
 
         return return_data
 
+    def train_single(self, features, label, i):
+        """Learn just one observation from a dictionary.
+        """
+        # Learn one observation
+        self._model.learn_one(features, label)
+
     def predict_one(self, features_dict):
         """Make a one prediction from features (received as a dictionary)."""
 
@@ -2007,7 +1457,7 @@ class Model():
         self._metric = self.metric.update(real_value, predicted_value)
 
         return self._metric
-
+    
     def test_batch(self, features_df, labels_df, metric=None):
         """Test the model on a set of observations reveived as a dataframe."""
 
@@ -2236,28 +1686,16 @@ class Model():
 
     def get_description(self):
         """(TEST) Print a model identifier."""
-        print("This is the {} Model".format(self._test))
+        print("This is the {} Model".format(self._type))
 
 
-#class TopPowerModel(Model, metaclass=Singleton):
-class TopPowerModel(Model):
-    """Top Rail power model as a Singleton class."""
+class PowerModel(Model):
+    """Power model as a Singleton class."""
 
-    def __init__(self, input_model=None):
+    def __init__(self, power_type, input_model=None):
 
         # Define the model and metrics used
         if input_model is None:
-
-            #tmp_model = (
-            #    river.preprocessing.StandardScaler() |
-            #    river.linear_model.LinearRegression(
-            #        optimizer=river.optim.SGD(0.001)
-            #    )
-            #)
-
-            # No da valores por debajo de 0, pero tarda infinito...
-            # tmp_model = river.forest.ARFRegressor(seed=42, max_features=None, grace_period=50, n_models = 5, max_depth=100, model_selector_decay=0.05)#, model_selector_decay=0.3)
-
             tmp_model = (
                 river.preprocessing.StandardScaler() |
                 river.tree.HoeffdingAdaptiveTreeRegressor(
@@ -2267,163 +1705,18 @@ class TopPowerModel(Model):
                     seed=42
                 )
             )
-
-            #tmp_model = preprocessing.StandardScaler()
-            #tmp_model |= ensemble.BaggingRegressor(
-            #    model=river.linear_model.LinearRegression(intercept_lr=0.1),
-            #    n_models=3,
-            #    seed=42
-            #)
-
-            #tmp_model = (
-            #    river.preprocessing.StandardScaler() |
-            #    river.linear_model.LinearRegression(
-            #        intercept_lr=0.001
-            #    )
-            #)
-
-            #tmp_model = (
-            #    river.preprocessing.StandardScaler() |
-            #    river.linear_model.LogisticRegression(
-            #        optimizer=river.optim.SGD(.1)
-            #    )
-            #)
-
-            #tmp_model = (
-            #    river.preprocessing.StandardScaler() |
-            #    river.rules.AMRules(
-            #        delta=0.01,
-            #        n_min=50,
-            #        drift_detector=river.drift.ADWIN()
-            #    )
-            #)
-
-            #tmp_model = ensemble.ADWINBaggingClassifier(
-            #    model=(
-            #        river.preprocessing.StandardScaler() |
-            #        river.linear_model.LinearRegression(
-            #            optimizer=river.optim.SGD(0.001)
-            #        )
-            #    ),
-            #    n_models=3,
-            #    seed=42
-            #)
-
-
-            #tmp_model = (
-            #    river.preprocessing.StandardScaler() |
-            #    river.linear_model.LinearRegression(
-            #        intercept_lr=.1
-            #    )
-            #)
-
-            #tmp_model = river.linear_model.PARegressor(
-            #    C=0.01,
-            #    mode=2,
-            #    eps=0.1,
-            #    learn_intercept=False
-            #)
-
-            #tmp_model = river.preprocessing.StandardScaler()
-            #tmp_model |= river.ensemble.BaggingRegressor(
-            #    model=river.linear_model.LinearRegression(intercept_lr=0.1),
-            #    n_models=10,
-            #    seed=42
-            #)
-
-            #tmp_model = (
-            #    river.preprocessing.StandardScaler() |
-            #    river.neural_net.MLPRegressor(
-            #        hidden_dims=(5,),
-            #        activations=(
-            #            river.neural_net.activations.ReLU,
-            #            river.neural_net.activations.ReLU,
-            #            river.neural_net.activations.Identity
-            #        ),
-            #        optimizer=river.optim.SGD(1e-3),
-            #        seed=42
-            #    )
-            #)
-
-            #tmp_model = river.neighbors.KNNRegressor()
-            # tmp_model = river.forest.ARFRegressor(seed=42, max_features=None, grace_period=100, n_models = 3, model_selector_decay=0.05)#, model_selector_decay=0.3)
-
         else:
             tmp_model = input_model
 
-        #tmp_metric = river.metrics.MAPE()
         tmp_metric = river.utils.Rolling(river.metrics.MAPE(), window_size=1000)
-        #tmp_metric = river.metrics.RMSE()
-        super().__init__(tmp_model, tmp_metric)
-        self._test = "Top Power"
+
+        if power_type not in ["PS", "PL", "PS+PL"]:
+            raise ValueError(f"Invalid type of Power model: {power_type}. Must be one of: PS, PL, PS+PL")
+        tmp_type = power_type
+
+        super().__init__(tmp_model, tmp_metric, tmp_type)
 
 
-#class BottomPowerModel(Model, metaclass=Singleton):
-class BottomPowerModel(Model):
-    """Bottom Rail power model as a Singleton class."""
-
-    def __init__(self, input_model=None):
-
-        # Define the model and metrics used
-        if input_model is None:
-            # tmp_model = (
-            #     river.preprocessing.StandardScaler() |
-            #     river.linear_model.LinearRegression(
-            #         optimizer=river.optim.SGD(0.001)
-            #     )
-            # )
-
-            # Poner los modelos de power con regresión y borrar (preguntar a andrees qué opina)
-            # Hacer grid search
-
-            # No da valores por debajo de 0, pero tarda infinito...
-            # tmp_model = river.forest.ARFRegressor(seed=42, max_features=None, grace_period=50, n_models = 5, max_depth=100, model_selector_decay=0.05)#, model_selector_decay=0.3)
-
-            tmp_model = (
-                river.preprocessing.StandardScaler() |
-                river.tree.HoeffdingAdaptiveTreeRegressor(
-                    max_depth=100,
-                    grace_period=50,
-                    model_selector_decay=0.05,
-                    seed=42
-                )
-            )
-
-        else:
-            tmp_model = input_model
-
-        ## Hacer grid search de los hiper parametros
-
-        # model = (
-        #     river.preprocessing.StandardScaler() |
-        #     linear_model.LinearRegression(intercept_lr=.1)
-        # )
-        # models = river.utils.expand_param_grid(model, {
-        #     'LinearRegression': {
-        #         'optimizer': [
-        #             (optim.SGD, {'lr': [.1, .01, .005]}),
-        #             (optim.Adam, {'beta_1': [.01, .001], 'lr': [.1, .01, .001]}),
-        #             (optim.Adam, {'beta_1': [.1], 'lr': [.001]}),
-        #         ]
-        #     }
-        # })
-        # tmp_model = river.model_selection.SuccessiveHalvingRegressor(
-        #     models,
-        #     metric=metrics.RMSE(),
-        #     budget=2000,
-        #     eta=2,
-        #     verbose=True
-        # )
-
-
-        #tmp_metric = river.metrics.MAPE()
-        tmp_metric = river.utils.Rolling(river.metrics.MAPE(), window_size=1000)
-        #tmp_metric = river.metrics.RMSE()
-        super().__init__(tmp_model, tmp_metric)
-        self._test = "Bottom Power"
-
-
-#class TimeModel(Model, metaclass=Singleton):
 class TimeModel(Model):
     """Performance model as a Singleton class."""
 
@@ -2431,101 +1724,25 @@ class TimeModel(Model):
 
         # Define the model and metrics used
         if input_model is None:
-
-            #tmp_model = (
-            #    river.preprocessing.Normalizer() |
-            #    river.tree.HoeffdingAdaptiveTreeRegressor(
-            #        grace_period=25,
-            #        leaf_prediction='adaptive',
-            #        model_selector_decay=0.3
-            #    )
-            #)
-            #tmp_model = river.tree.HoeffdingTreeRegressor(
-            #    grace_period=25,
-            #    leaf_prediction='adaptive',
-            #    model_selector_decay=0.3
-            #)
-            #tmp_model = river.tree.HoeffdingAdaptiveTreeRegressor(
-            #    grace_period=25,
-            #    model_selector_decay=0.3,
-            #    seed=42
-            #)
-            #tmp_model = river.tree.SGTRegressor(
-            #    delta=0.01,
-            #    lambda_value=0.01,
-            #    grace_period=20,
-            #    feature_quantizer=river.tree.splitter.DynamicQuantizer(std_prop=0.1)
-            #)
-            #tmp_model = river.tree.SGTRegressor(
-            #    feature_quantizer=river.tree.splitter.DynamicQuantizer(std_prop=0.1)
-            #)
-            #tmp_model = (
-            #    river.river.preprocessing.StandardScaler() |
-            #    river.tree.HoeffdingTreeRegressor(
-            #        grace_period=400,
-            #        model_selector_decay=0.9
-            #    )
-            #)
-            #tmp_model = (
-            #    river.preprocessing.StandardScaler() |
-            #    river.forest.ARFRegressor(seed=42, max_features=None, grace_period=50, n_models = 5, max_depth=100)
-            #)
-
-            #tmp_model = conf.RegressionJackknife(
-            #    (
-            #        #river.preprocessing.StandardScaler() |
-            #        #river.preprocessing.RobustScaler() |
-            #        river.preprocessing.TargetMinMaxScaler(
-            #        river.forest.ARFRegressor(seed=42, max_features=None, grace_period=100, n_models=5)
-            #        )
-            #    ),
-            #    confidence_level=0.95
-            #)
-
-            #self._validity = stats.Mean()
-            #self._efficiency = stats.Mean()
-
-            # tmp_model = (
-            #     river.preprocessing.StandardScaler() |
-            #     river.linear_model.LinearRegression(
-            #         optimizer=river.optim.SGD(0.001)
-            #     )
-            # )
-
-
-            #tmp_model = river.forest.ARFRegressor(seed=42, max_features=None, grace_period=100, n_models=5)
-            #tmp_model = (
-            #    river.preprocessing.StandardScaler() |
-            #    linear_model.LinearRegression(intercept_lr=.1,
-            #        optimizer=river.optim.SGD(0.001),
-            #        l2=0.9)
-            #)
-            #tmp_model = river.forest.ARFRegressor(seed=42, max_features=None, grace_period=15, n_models = 30)#, model_selector_decay=0.3)
-            #tmp_model = river.forest.ARFRegressor(seed=42, max_features=None, grace_period=50, n_models = 5, max_depth=100, model_selector_decay=0.05, disable_weighted_vote=False)#, model_selector_decay=0.3)
-            #
-            # ESTE
-
-            tmp_model = river.forest.ARFRegressor(seed=42, max_features=None, grace_period=50, n_models = 5, max_depth=100, model_selector_decay=0.05)#, model_selector_decay=0.3)
-            #tmp_model = river.forest.OXTRegressor(seed=42, max_features=None)
-            #tmp_model = river.forest.ARFRegressor(seed=42, max_features=None, grace_period=50, n_models = 5, max_depth=100, metric=metrics.MSE())#, model_selector_decay=0.3)
+            tmp_model = river.forest.ARFRegressor(seed=42, max_features=None, grace_period=50, n_models = 5, max_depth=100, model_selector_decay=0.05)
         else:
             tmp_model = input_model
 
-        #tmp_metric = river.metrics.MAPE()
         tmp_metric = river.utils.Rolling(river.metrics.MAPE(), window_size=1000)
-        #tmp_metric = river.metrics.RMSE()
-        super().__init__(tmp_model, tmp_metric)
-        self._test = "Time"
+
+        tmp_type = "Time"
+
+        super().__init__(tmp_model, tmp_metric, tmp_type)
 
 
 if __name__ == "__main__":
 
     # Instantiate each model
-    top_power_model = TopPowerModel()
-    bottom_power_model = BottomPowerModel()
+    ps_power_model = PowerModel("PS")
+    pl_power_model = PowerModel("PL")
     time_model = TimeModel()
 
     # Print the identifier of each model
-    top_power_model.get_description()
-    bottom_power_model.get_description()
+    ps_power_model.get_description()
+    pl_power_model.get_description()
     time_model.get_description()

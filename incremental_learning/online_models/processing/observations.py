@@ -47,7 +47,6 @@ def sample_observations(df):
     return train_set, test_set
 
 
-# Formating dataset
 def dataset_formating_zcu(dataframe):
     """Format a dataset extracting top power, bottom power and time features
        and labels
@@ -63,44 +62,59 @@ def dataset_formating_zcu(dataframe):
 
     # Test
     # print("\nTop Power Attributes:\n")
-    # print(top_power_att_df)
+    # print(top_power_labels_df)
     # print("\n")
     # print("\nBottom Power Attributes:\n")
-    # print(bottom_power_att_df)
+    # print(bottom_power_labels_df)
     # print("\n")
     # print("\nTime Attributes:\n")
     # print(time_att_df)
     # print("\n")
 
-    return features_df, top_power_labels_df, bottom_power_labels_df, time_labels_df
+    return [features_df, top_power_labels_df, bottom_power_labels_df, time_labels_df]
 
 
-# Formating dataset
-def dataset_formating_pynq(df):
+def dataset_formating_pynq(dataframe):
     """Format a dataset extracting power and time features
        and labels
     """
 
     # Extract features
-    power_features_df = time_features_df = \
-        df.drop(["Power", "Time"], axis=1)
+    features_df = dataframe.drop(["Power", "Time"], axis=1)
 
     # Extract labels
-    power_labels_df = df["Power"].copy()
-    time_labels_df = df["Time"].copy()
+    power_labels_df = dataframe["Power"].copy()
+    time_labels_df = dataframe["Time"].copy()
 
     # Test
     # print("\nPower Attributes:\n")
-    # print(power_att_df)
+    # print(power_labels_df)
+    # print("\n")
     # print("\n")
     # print("\nTime Attributes:\n")
     # print(time_att_df)
     # print("\n")
 
-    return power_features_df, \
-        power_labels_df, \
-        time_features_df, \
-        time_labels_df
+    return [features_df, power_labels_df, time_labels_df]
+
+
+# Map board to functions
+formating_functions = {
+    "ZCU": dataset_formating_zcu,
+    "PYNQ": dataset_formating_pynq
+    # TODO: Implement AU250
+}
+
+
+def dataset_formating(dataframe, board):
+    """Format a dataset extracting power and time features
+       and labels
+    """
+
+    if board not in formating_functions:
+        raise ValueError(f"Board not supported: {board}")
+    
+    return formating_functions[board](dataframe)
 
 
 if __name__ == "__main__":
@@ -113,12 +127,7 @@ if __name__ == "__main__":
         test_set_dataframe = sample_observations(observations_dataframe)
 
     # Format each dataset
-    att_train_dataframe, \
+    [att_train_dataframe, \
         top_power_labels_train_dataframe, \
         bottom_power_labels_train_dataframe, \
-        time_labels_train_dataframe = dataset_formating_zcu(train_set_dataframe)
-
-    att_test_dataframe, \
-        top_power_labels_test_dataframe, \
-        bottom_power_labels_test_dataframe, \
-        time_labels_test_dataframe = dataset_formating_zcu(test_set_dataframe)
+        time_labels_train_dataframe] = dataset_formating(train_set_dataframe, "ZCU")
