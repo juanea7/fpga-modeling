@@ -174,7 +174,7 @@ def generate_observations_from_measurement_window(monitor_window,
             if cpu_usage_data is not None:
                 cpu_usage_data = [round(cpu_usage_data[0], 3), round(cpu_usage_data[1], 3), round(cpu_usage_data[2], 3)]
                 tmp_obs.insert(0, cpu_usage_data)
-            
+
             #print("cpu_usage_data enable: {}".format(cpu_usage_data is not None))
             #print(tmp_obs)
 

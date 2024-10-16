@@ -182,7 +182,7 @@ def process_power_values_zcu(power_data_a,
     y_values_a = (power_data_a * power_conversion_factor_a)
     y_values_b = (power_data_b * power_conversion_factor_b)
     # Returns np arrays
-    return [x_values, x_values, y_values_a, y_values_b]
+    return [x_values, y_values_a, x_values, y_values_b]
 
 
 def process_power_values_pynq(power_data,
@@ -424,7 +424,7 @@ def process_monitor_data(power_buffer,
                                             1000000,
                                             100000)
 
-        # Convert to x and y (watts) values 
+        # Convert to x and y (watts) values
         power_values = process_power_values_zcu(top_power_data,
                                                 bottom_power_data,
                                                 power_time,
@@ -554,10 +554,10 @@ def fragmentate_monitor_measurements_zcu(power_buffer,
         traces_y_values_fragments_list.append(new_traces_y_values_list)
 
     # Return monitor measurement fragments
-    return [top_power_x_values_fragments_list,\
+    return [[top_power_x_values_fragments_list,\
         top_power_y_values_fragments_list,\
         bottom_power_x_values_fragments_list,\
-        bottom_power_y_values_fragments_list,\
+        bottom_power_y_values_fragments_list],\
         traces_x_values_fragments_list,\
         traces_y_values_fragments_list]
 
@@ -627,8 +627,8 @@ def fragmentate_monitor_measurements_pynq(power_buffer,
         traces_power_y_values_fragments_list.append(new_traces_y_values_list)
 
     # Return monitor measurement fragments
-    return [power_x_values_fragments_list,\
-        power_y_values_fragments_list,\
+    return [[power_x_values_fragments_list,\
+        power_y_values_fragments_list],\
         traces_power_x_values_fragments_list,\
         traces_power_y_values_fragments_list]
 
@@ -653,7 +653,7 @@ def fragmentate_monitor_measurements(power_buffer,
 
     if board not in fragmentate_monitor_functions:
         raise ValueError(f"Board not supported: {board}")
-    
+
     return fragmentate_monitor_functions[board](power_buffer,
                                                 traces_buffer,
                                                 kernel_combinations)

@@ -57,13 +57,29 @@ def process_observation(observation, board, cpu_usage: False):
 
     # Set the first feature, corresponding with the main kernel of the
     # observation
-    features["Main"] = observation[-5]
+    if board == "ZCU":
+        features["Main"] = observation[-5]
+    elif board == "PYNQ":
+        features["Main"] = observation[-4]
+    elif board == "AU250":
+        # TODO: Implement this
+        raise ValueError(f"Board not supported: {board}")
+    else:
+        raise ValueError(f"Board not supported: {board}")
 
     # Generate a local dict to store observation info
     observation_info = {}
 
     # Obtain a list with the info of all of the kernels in this observation
-    kernels = observation[-4].split('_')
+    if board == "ZCU":
+        kernels = observation[-4].split('_')
+    elif board == "PYNQ":
+        kernels = observation[-3].split('_')
+    elif board == "AU250":
+        # TODO: Implement this
+        raise ValueError(f"Board not supported: {board}")
+    else:
+        raise ValueError(f"Board not supported: {board}")
 
     # Iterate over each of the kernels in the observation processing its
     # particular features
