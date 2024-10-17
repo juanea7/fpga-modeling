@@ -100,15 +100,15 @@ def generate_bar_diagram_data_process(slots, monitor_data):
 
 
 @multimethod
-def extract_monitoring_window_info(filename: str, cpu_usage: bool):
+def extract_monitoring_window_info(filename: str, cpu_usage: bool, board: str):
     """Extracts info of the monitoring window from a file.
        Info such as window start and stop time, kernels per slot, etc.
 
        Structure of the file
 
-                                                 
+
         user_cpu | kernel_cpu | idle_cpu | monitor_window_data | ->
-        
+
         ->                 | next is a kernel| k | ->
         -> number_of_slots |        1        | . | ->
 
@@ -149,10 +149,21 @@ def extract_monitoring_window_info(filename: str, cpu_usage: bool):
     """
 
     # Format of the data structures inside the file
-    cpu_usage_format = "f"
-    monitor_data_format = "6l"
-    kernel_data_format = "1i4l"
-    separator_format = "i"
+    if board == "ZCU":
+        # Use native size (8 bytes for long (l), same on ZCU timespec)
+        cpu_usage_format = "f"
+        monitor_data_format = "6l"
+        kernel_data_format = "1i4l"
+        separator_format = "i"
+    elif board == "PYNQ":
+        # Use standard size (4 bytes for long (l), same on PYNQ timespec)
+        cpu_usage_format = "=f"
+        monitor_data_format = "=6l"
+        kernel_data_format = "=1i4l"
+        separator_format = "=i"
+    else:
+        # TODO: Implement AU250
+        raise ValueError(f"Board {board} not supported.")
 
     # Calculate the size of each data structure
     cpu_usage_size = struct.calcsize(cpu_usage_format)
@@ -289,15 +300,15 @@ def extract_monitoring_window_info(filename: str, cpu_usage: bool):
 
 
 @multimethod
-def extract_monitoring_window_info(buffer: memoryview, cpu_usage: bool):
+def extract_monitoring_window_info(buffer: memoryview, cpu_usage: bool, board: str):
     """Extracts info of the monitoring window from a file.
        Info such as window start and stop time, kernels per slot, etc.
 
        Structure of the file
 
-                                                 
+
         user_cpu | kernel_cpu | idle_cpu | monitor_window_data | ->
-        
+
         ->                 | next is a kernel| k | ->
         -> number_of_slots |        1        | . | ->
 
@@ -337,10 +348,21 @@ def extract_monitoring_window_info(buffer: memoryview, cpu_usage: bool):
     """
 
     # Format of the data structures inside the file
-    cpu_usage_format = "f"
-    monitor_data_format = "6l"
-    kernel_data_format = "1i4l"
-    separator_format = "i"
+    if board == "ZCU":
+        # Use native size (8 bytes for long (l), same on ZCU timespec)
+        cpu_usage_format = "f"
+        monitor_data_format = "6l"
+        kernel_data_format = "1i4l"
+        separator_format = "i"
+    elif board == "PYNQ":
+        # Use standard size (4 bytes for long (l), same on PYNQ timespec)
+        cpu_usage_format = "=f"
+        monitor_data_format = "=6l"
+        kernel_data_format = "=1i4l"
+        separator_format = "=i"
+    else:
+        # TODO: Implement AU250
+        raise ValueError(f"Board {board} not supported.")
 
     # Calculate the size of each data structure
     cpu_usage_size = struct.calcsize(cpu_usage_format)

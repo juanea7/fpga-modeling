@@ -204,7 +204,7 @@ def generate_observations_from_online_data(online_data_buffer,
     cpu_usage_data, \
         monitor_data, \
         slot_list = \
-        extract_monitoring_window_info(online_data_buffer, cpu_usage)
+        extract_monitoring_window_info(online_data_buffer, cpu_usage, board)
 
     # Create de slots bar diagram data
     slots_data = generate_bar_diagram_data_process(slot_list, monitor_data)
