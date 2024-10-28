@@ -15,14 +15,7 @@ import copy
 import pickle
 import os
 
-import matplotlib as mpl
-import matplotlib.pyplot as plt
-# mpl.rc('axes', labelsize=14)
-# mpl.rc('xtick', labelsize=12)
-# mpl.rc('ytick', labelsize=12)
-# blue_color_matlab = (0, 0.4470, 0.7410)
 import numpy as np
-
 import river
 
 from river import (
@@ -820,6 +813,10 @@ class Model():
            one by one.
         """
 
+        # TODO: Not used on-chip. Handle this properly
+        import matplotlib as mpl
+        import matplotlib.pyplot as plt
+
         i = 0
 
         # Adaptative Model Testing
@@ -1153,6 +1150,10 @@ class Model():
         """Learn all observations within the 'feature_df' dataframe
            one by one.
         """
+
+        # TODO: Not used on-chip. Handle this properly
+        import matplotlib as mpl
+        import matplotlib.pyplot as plt
 
         features_df, labels_df, grid_search_parameters = args
 
@@ -1507,6 +1508,10 @@ class Model():
 
     def test_batch(self, features_df, labels_df, metric=None):
         """Test the model on a set of observations reveived as a dataframe."""
+
+        # TODO: Not used on-chip. Handle this properly
+        import matplotlib as mpl
+        import matplotlib.pyplot as plt
 
         metric = river.metrics.MAPE() if metric is None else metric
 

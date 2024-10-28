@@ -21,8 +21,6 @@ import copy
 import numpy as np
 import pandas as pd
 import river
-import matplotlib as mpl
-import matplotlib.pyplot as plt
 # TODO: delete
 import time
 
@@ -79,13 +77,13 @@ class OnlineModels():
         if num_models is None:
             raise ValueError(f"Board {board} not supported.")
         self._board = board
-        
+
         # Get the input models
         if input_models is None:
             input_models = [None] * num_models
         elif len(input_models) != num_models:
             raise ValueError("The number of input models does not match the number of models.")
-            
+
         # Initialize the models
         if board == "ZCU":
             self._models = [
@@ -96,7 +94,7 @@ class OnlineModels():
         elif board == "PYNQ":
             self._models = [
                 models.PowerModel("PS+PL",input_model=input_models[0], train_mode=train_mode, capture_all_traces=capture_all_traces),
-                models.TimeModel(input_model=input_models[2], train_mode=train_mode, capture_all_traces=capture_all_traces)
+                models.TimeModel(input_model=input_models[1], train_mode=train_mode, capture_all_traces=capture_all_traces)
                 ]
         else:
             # TODO: Implement AU250
@@ -187,7 +185,7 @@ class OnlineModels():
 
         # Create a data structure containing model information to sync them {model: (mode, changed)}
         sync_info = {
-            key: (mode, changed) 
+            key: (mode, changed)
             for key, mode, changed in zip(models_types, models_mode, models_changed)
             }
 
@@ -614,7 +612,7 @@ class OnlineModels():
             # Update the iteration value with the minimum required to end the test-idle part
             iteration += training_monitor_info["minimum_test_idle_obs_left"]
             # Signal the end of the idle phase (we are assuming the setup works properly)
-            for model in self._models: 
+            for model in self._models:
                 model.end_idle_phase(iteration)
 
             # Return action to be commanded to the setup
@@ -627,6 +625,12 @@ class OnlineModels():
             return iteration, mode, training_monitor_info["minimum_test_test_round_obs_left"]
 
     def _print_training_monitor_info(self):
+
+
+        # TODO: Not used on-chip. Handle this properly
+        import matplotlib as mpl
+        import matplotlib.pyplot as plt
+
         # Matplotlib configuration
         mpl.rcParams['figure.figsize'] = (20, 12)
         # Remove top and right frame
@@ -697,6 +701,10 @@ class OnlineModels():
         """Format the input observation dataframe and train each model on each
            of the observations.
         """
+
+        # TODO: Not used on-chip. Handle this properly
+        import matplotlib as mpl
+        import matplotlib.pyplot as plt
 
         # Format the dataframe
         [features_df, \
@@ -967,6 +975,10 @@ class OnlineModels():
         """Format the input observation dataframe and train each model on each
            of the observations.
         """
+
+        # TODO: Not used on-chip. Handle this properly
+        import matplotlib as mpl
+        import matplotlib.pyplot as plt
 
         # Format the dataframe
         [features_df, \
