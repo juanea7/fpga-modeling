@@ -199,15 +199,16 @@ def pruebas(train_df, online_models, data_save_file_name):
             model._training_monitor.test_test_regions[-1].append(iteration-1)
     ###############
 
+
     # Save the models training monitor
     with open(f"./model_error_figures/{data_save_file_name}_training_monitors.pkl", 'wb') as file:
         tmp_var = [model._training_monitor for model in online_models._models]
         pickle.dump(tmp_var, file)
 
-    # # Save the actual models
-    # with open(f"./model_error_figures/{data_save_file_name}_models.pkl", 'wb') as file:
-    #     tmp_var = [model for model in online_models._models]
-    #     pickle.dump(tmp_var, file)
+    # Save the actual models
+    with open(f"./model_error_figures/{data_save_file_name}_models.pkl", 'wb') as file:
+        tmp_var = [model for model in online_models._models]
+        pickle.dump(tmp_var, file)
 
     return online_models
 

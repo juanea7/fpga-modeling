@@ -19,7 +19,7 @@ import numpy as np
 from scipy.interpolate import interp1d
 
 
-def show_model_data(online_models_data):
+def show_model_data(online_models_data, board):
     """
     Process models output data and generate pertinent figures.
 
@@ -40,9 +40,16 @@ def show_model_data(online_models_data):
     """
 
     # Extract data from online models data
-    top_training_monitor = online_models_data[0]
-    bottom_training_monitor = online_models_data[1]
-    time_training_monitor = online_models_data[2]
+    models_list = []
+    if board == "ZCU":
+        models_list.append(online_models_data[0])
+        models_list.append(online_models_data[1])
+        models_list.append(online_models_data[2])
+    elif board == "PYNQ":
+        models_list.append(online_models_data[0])
+        models_list.append(online_models_data[1])
+    else:
+        raise ValueError("Board not supported: {}".format(board))
 
     # Matplotlib configuration
     mpl.rcParams['figure.figsize'] = (20, 12)
@@ -52,85 +59,43 @@ def show_model_data(online_models_data):
     mpl.rcParams['axes.spines.top'] = False
     mpl.rcParams['axes.spines.bottom'] = True
 
-    for model_index in range(3):
+
+    for iter, model in enumerate(models_list):
         # Create a 2x2 grid of subplots within the same figure
         fig, ax1 = plt.subplots(nrows=1, ncols=1, sharex=True, constrained_layout=False)
 
         fig.supxlabel('Number of Observations')
         fig.suptitle('Error Metrics!!')
 
-        if model_index == 0:
-            # Add colored background spans to the plot (train)
-            for xmin, xmax in top_training_monitor.train_train_regions:
-                ax1.axvspan(
-                    xmin, xmax, alpha=0.4,
-                    color=top_training_monitor.train_train_regions_color,
-                    zorder=0
-                    )
-            # Add colored background spans to the plot (test)
-            for xmin, xmax in top_training_monitor.test_test_regions:
-                ax1.axvspan(
-                    xmin, xmax, alpha=0.4,
-                    color=top_training_monitor.test_test_regions_color,
-                    zorder=0
-                    )
-            # Plot model metrics
-            ax1.plot(
-                top_training_monitor.train_training_metric_history,
-                label="adaptative_training_history",
-                color='tab:green',
-                zorder=2
+        # Add colored background spans to the plot (train)
+        for xmin, xmax in model.train_train_regions:
+            ax1.axvspan(
+                xmin, xmax, alpha=0.4,
+                color=model.train_train_regions_color,
+                zorder=0
                 )
-            # Set Y limit
+        # Add colored background spans to the plot (test)
+        for xmin, xmax in model.test_test_regions:
+            ax1.axvspan(
+                xmin, xmax, alpha=0.4,
+                color=model.test_test_regions_color,
+                zorder=0
+                )
+        # Plot model metrics
+        ax1.plot(
+            model.train_training_metric_history,
+            label="adaptative_training_history",
+            color='tab:green',
+            zorder=2
+            )
+        # Set Y limit based on the number of models and their index
+        if (len(models_list) == 3 and iter < 2) or (len(models_list) == 2 and iter < 1):
             ax1.set_ylim([-0.5, 14.5])
-        if model_index == 1:
-            # Add colored background spans to the plot (train)
-            for xmin, xmax in bottom_training_monitor.train_train_regions:
-                ax1.axvspan(
-                    xmin, xmax, alpha=0.4,
-                    color=bottom_training_monitor.train_train_regions_color,
-                    zorder=0
-                    )
-            # Add colored background spans to the plot (test)
-            for xmin, xmax in bottom_training_monitor.test_test_regions:
-                ax1.axvspan(
-                    xmin, xmax, alpha=0.4,
-                    color=bottom_training_monitor.test_test_regions_color,
-                    zorder=0
-                    )
-            # Plot model metrics
-            ax1.plot(
-                bottom_training_monitor.train_training_metric_history,
-                label="adaptative_training_history",
-                color='tab:green',
-                zorder=2
-                )
-            # Set Y limit
-            ax1.set_ylim([-0.5, 14.5])
-        if model_index == 2:
-            # Add colored background spans to the plot (train)
-            for xmin, xmax in time_training_monitor.train_train_regions:
-                ax1.axvspan(
-                    xmin, xmax, alpha=0.4,
-                    color=time_training_monitor.train_train_regions_color,
-                    zorder=0
-                    )
-            # Add colored background spans to the plot (test)
-            for xmin, xmax in time_training_monitor.test_test_regions:
-                ax1.axvspan(
-                    xmin, xmax, alpha=0.4,
-                    color=time_training_monitor.test_test_regions_color,
-                    zorder=0
-                    )
-            # Plot model metrics
-            ax1.plot(
-                time_training_monitor.train_training_metric_history,
-                label="adaptative_training_history",
-                color='tab:green',
-                zorder=2
-                )
-            # Set Y limit
+        else:
             ax1.set_ylim([-0.5, 60.5])
+
+        print(f"Model {iter} - Average Training Error: {np.mean(model.train_training_metric_history)}")
+
 
         # Set Y label, grid and legend
         ax1.set_ylabel("% error", color='k')
@@ -140,9 +105,9 @@ def show_model_data(online_models_data):
         plt.tight_layout()  # Adjust subplot spacing
 
         # Create directory if it does not exit
-        model_error_figures_dir = "./model_error_figures"
-        if not os.path.exists(model_error_figures_dir):
-            os.makedirs(model_error_figures_dir)
+        #model_error_figures_dir = "./model_error_figures"
+        #if not os.path.exists(model_error_figures_dir):
+        #    os.makedirs(model_error_figures_dir)
 
         # # Ask the user for the figure name
         # figure_save_file_name = input("Give me name to save this figure with "
@@ -154,6 +119,114 @@ def show_model_data(online_models_data):
 
         # Plot the figure
         plt.show()
+
+
+
+
+
+    # for model_index in range(3):
+    #     # Create a 2x2 grid of subplots within the same figure
+    #     fig, ax1 = plt.subplots(nrows=1, ncols=1, sharex=True, constrained_layout=False)
+
+    #     fig.supxlabel('Number of Observations')
+    #     fig.suptitle('Error Metrics!!')
+
+
+    #     if model_index == 0:
+    #         # Add colored background spans to the plot (train)
+    #         for xmin, xmax in top_training_monitor.train_train_regions:
+    #             ax1.axvspan(
+    #                 xmin, xmax, alpha=0.4,
+    #                 color=top_training_monitor.train_train_regions_color,
+    #                 zorder=0
+    #                 )
+    #         # Add colored background spans to the plot (test)
+    #         for xmin, xmax in top_training_monitor.test_test_regions:
+    #             ax1.axvspan(
+    #                 xmin, xmax, alpha=0.4,
+    #                 color=top_training_monitor.test_test_regions_color,
+    #                 zorder=0
+    #                 )
+    #         # Plot model metrics
+    #         ax1.plot(
+    #             top_training_monitor.train_training_metric_history,
+    #             label="adaptative_training_history",
+    #             color='tab:green',
+    #             zorder=2
+    #             )
+    #         # Set Y limit
+    #         ax1.set_ylim([-0.5, 14.5])
+    #     if model_index == 1:
+    #         # Add colored background spans to the plot (train)
+    #         for xmin, xmax in bottom_training_monitor.train_train_regions:
+    #             ax1.axvspan(
+    #                 xmin, xmax, alpha=0.4,
+    #                 color=bottom_training_monitor.train_train_regions_color,
+    #                 zorder=0
+    #                 )
+    #         # Add colored background spans to the plot (test)
+    #         for xmin, xmax in bottom_training_monitor.test_test_regions:
+    #             ax1.axvspan(
+    #                 xmin, xmax, alpha=0.4,
+    #                 color=bottom_training_monitor.test_test_regions_color,
+    #                 zorder=0
+    #                 )
+    #         # Plot model metrics
+    #         ax1.plot(
+    #             bottom_training_monitor.train_training_metric_history,
+    #             label="adaptative_training_history",
+    #             color='tab:green',
+    #             zorder=2
+    #             )
+    #         # Set Y limit
+    #         ax1.set_ylim([-0.5, 14.5])
+    #     if model_index == 2:
+    #         # Add colored background spans to the plot (train)
+    #         for xmin, xmax in time_training_monitor.train_train_regions:
+    #             ax1.axvspan(
+    #                 xmin, xmax, alpha=0.4,
+    #                 color=time_training_monitor.train_train_regions_color,
+    #                 zorder=0
+    #                 )
+    #         # Add colored background spans to the plot (test)
+    #         for xmin, xmax in time_training_monitor.test_test_regions:
+    #             ax1.axvspan(
+    #                 xmin, xmax, alpha=0.4,
+    #                 color=time_training_monitor.test_test_regions_color,
+    #                 zorder=0
+    #                 )
+    #         # Plot model metrics
+    #         ax1.plot(
+    #             time_training_monitor.train_training_metric_history,
+    #             label="adaptative_training_history",
+    #             color='tab:green',
+    #             zorder=2
+    #             )
+    #         # Set Y limit
+    #         ax1.set_ylim([-0.5, 60.5])
+
+    #     # Set Y label, grid and legend
+    #     ax1.set_ylabel("% error", color='k')
+    #     ax1.tick_params(axis='y', labelcolor='k')
+    #     ax1.grid(True)
+    #     ax1.legend()
+    #     plt.tight_layout()  # Adjust subplot spacing
+
+    #     # Create directory if it does not exit
+    #     #model_error_figures_dir = "./model_error_figures"
+    #     #if not os.path.exists(model_error_figures_dir):
+    #     #    os.makedirs(model_error_figures_dir)
+
+    #     # # Ask the user for the figure name
+    #     # figure_save_file_name = input("Give me name to save this figure with "
+    #     #                                 f"(path:{model_error_figures_dir}/<name>.pkl): ")
+
+    #     # # Save the figure
+    #     # with open(f"{model_error_figures_dir}/{figure_save_file_name}.pkl", 'wb') as file:
+    #     #     pickle.dump(fig, file)
+
+    #     # Plot the figure
+    #     plt.show()
 
 
 def show_model_data_with_time(online_models_data, times_list):
@@ -311,6 +384,15 @@ if __name__ == "__main__":
     # Parse arguments
     parser = argparse.ArgumentParser()
 
+    # Indicate the board
+    parser.add_argument(
+        '-b',
+        dest="board",
+        help='<Required> Board used for the training',
+        choices=["ZCU", "PYNQ"],
+        required=True
+        )
+
     # Indicate the path of the file containing the online models data
     parser.add_argument(
         '-m',
@@ -330,11 +412,11 @@ if __name__ == "__main__":
     args = parser.parse_args(sys.argv[1:])
 
     # Open models data
-    with open(args.models_path, "rb") as file:
+    with open(args.models_training_monitors_path, "rb") as file:
         online_models_obj = pickle.load(file)
 
     # Generate figures
-    show_model_data(online_models_obj)
+    show_model_data(online_models_obj, args.board)
 
     if args.temporal_data_path is not None:
 
