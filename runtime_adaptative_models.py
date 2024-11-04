@@ -46,6 +46,7 @@ class FeatureswCPUUsage(ct.Structure):
         ("user", ct.c_float),
         ("kernel", ct.c_float),
         ("idle", ct.c_float),
+        ("Main", ct.c_uint8),
         ("aes", ct.c_uint8),
         ("bulk", ct.c_uint8),
         ("crs", ct.c_uint8),
@@ -67,6 +68,7 @@ class FeatureswCPUUsage(ct.Structure):
 class FeatureswoCPUUsage(ct.Structure):
     """ Features without CPU Usage- This class defines a C-like struct """
     _fields_ = [
+        ("Main", ct.c_uint8),
         ("aes", ct.c_uint8),
         ("bulk", ct.c_uint8),
         ("crs", ct.c_uint8),
@@ -1068,8 +1070,8 @@ def prediction_thread_func(online_models, tcp_socket, board, cpu_usage):
     while buff != b'0':
 
         buff = tcp_socket.recv_data()
-        print(f"buffer: {buff}")
-        print(f"[{'Prediction Thread':^19}]", datetime.now(timezone.utc))
+        # print(f"buffer: {buff}")
+        # print(f"[{'Prediction Thread':^19}]", datetime.now(timezone.utc))
 
         if i == 0:
             # Time measurement logic
@@ -1088,7 +1090,7 @@ def prediction_thread_func(online_models, tcp_socket, board, cpu_usage):
             features = features_c.get_dict()
 
             # DEBUG: print prediction request
-            print(features)
+            # print(features)
 
             # Make one prediction with the models
 
@@ -1163,19 +1165,19 @@ def prediction_thread_func(online_models, tcp_socket, board, cpu_usage):
             i += 1
 
             # test
-            if board == "ZCU":
-                tmp_top_metric, tmp_bottom_metric, tmp_time_metric = \
-                    online_models.get_metrics()
-                print(
-                    f"[{'Prediction Thread':^19}] Training Metrics: {tmp_top_metric} (top) | "
-                    f"{tmp_bottom_metric} (bottom) | {tmp_time_metric} (time)"
-                    )
-            elif board == "PYNQ":
-                tmp_power_metric, tmp_time_metric = online_models.get_metrics()
-                print(
-                    f"[{'Prediction Thread':^19}] Training Metrics: {tmp_power_metric} (power) | "
-                    f"{tmp_time_metric} (time)"
-                    )
+            # if board == "ZCU":
+            #     tmp_top_metric, tmp_bottom_metric, tmp_time_metric = \
+            #         online_models.get_metrics()
+            #     print(
+            #         f"[{'Prediction Thread':^19}] Training Metrics: {tmp_top_metric} (top) | "
+            #         f"{tmp_bottom_metric} (bottom) | {tmp_time_metric} (time)"
+            #         )
+            # elif board == "PYNQ":
+            #     tmp_power_metric, tmp_time_metric = online_models.get_metrics()
+            #     print(
+            #         f"[{'Prediction Thread':^19}] Training Metrics: {tmp_power_metric} (power) | "
+            #         f"{tmp_time_metric} (time)"
+            #         )
 
     # Close the socket
     tcp_socket.close_connection()
