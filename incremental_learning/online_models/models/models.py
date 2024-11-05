@@ -491,7 +491,7 @@ class TrainingMonitor:
         self.stage_changed = False
 
         # Update the training metric
-        self.train_training_metric = self.train_training_metric.update(y, y_pred)
+        self.train_training_metric.update(y, y_pred)
         # TODO: Remove
         self.train_training_metric_history.append(self.train_training_metric.get())
 
@@ -756,11 +756,9 @@ class Model():
     def update_state(self, y, y_pred, iteration):
         """
         Updates the Training Monitor with the current observations.
-        Returns whether to train or not, as well as a signal indicating a
-        stage change that should force other models to same stage.
-        This signal will be used on a higher level to sync the models.
         """
-        return self._training_monitor.update(y, y_pred, iteration)
+
+        self._training_monitor.update(y, y_pred, iteration)
 
 
     def get_info(self):
@@ -903,12 +901,12 @@ class Model():
 
             # Predict with the adaptative model
             adaptative_model_y_pred = adaptative_model_data["model"].predict_one(x)
-            adaptative_model_data["train"]["training_metric"] = adaptative_model_data["train"]["training_metric"].update(y, adaptative_model_y_pred)
+            adaptative_model_data["train"]["training_metric"].update(y, adaptative_model_y_pred)
             adaptative_model_data["train"]["training_metric_history"].append(adaptative_model_data["train"]["training_metric"].get())
 
             # Frozen model
             adaptative_model_y_pred_frozen = adaptative_model_data["frozen"]["model"].predict_one(x)
-            adaptative_model_data["frozen"]["training_metric"] = adaptative_model_data["frozen"]["training_metric"].update(y, adaptative_model_y_pred_frozen)
+            adaptative_model_data["frozen"]["training_metric"].update(y, adaptative_model_y_pred_frozen)
             adaptative_model_data["frozen"]["training_metric_history"].append(adaptative_model_data["frozen"]["training_metric"].get())
 
             # Only when in training mode
@@ -1018,9 +1016,9 @@ class Model():
             # Make prediction
             y_pred = self._model.predict_one(x)
             # Update metric
-            self._metric = self._metric.update(y, y_pred)
+            self._metric.update(y, y_pred)
             # Learn from observation
-            self._model = self._model.learn_one(x, y)
+            self._model.learn_one(x, y)
 
             # Store metric history (for plotting)
             continuous_train_mape_history.append(self._metric.get())
@@ -1243,12 +1241,12 @@ class Model():
 
             # Predict with the adaptative model
             adaptative_model_y_pred = adaptative_model_data["model"].predict_one(x)
-            adaptative_model_data["train"]["training_metric"] = adaptative_model_data["train"]["training_metric"].update(y, adaptative_model_y_pred)
+            adaptative_model_data["train"]["training_metric"].update(y, adaptative_model_y_pred)
             adaptative_model_data["train"]["training_metric_history"].append(adaptative_model_data["train"]["training_metric"].get())
 
             # Frozen model
             adaptative_model_y_pred_frozen = adaptative_model_data["frozen"]["model"].predict_one(x)
-            adaptative_model_data["frozen"]["training_metric"] = adaptative_model_data["frozen"]["training_metric"].update(y, adaptative_model_y_pred_frozen)
+            adaptative_model_data["frozen"]["training_metric"].update(y, adaptative_model_y_pred_frozen)
             adaptative_model_data["frozen"]["training_metric_history"].append(adaptative_model_data["frozen"]["training_metric"].get())
 
             # Only when in training mode
@@ -1358,9 +1356,9 @@ class Model():
             # Make prediction
             y_pred = self._model.predict_one(x)
             # Update metric
-            self._metric = self._metric.update(y, y_pred)
+            self._metric.update(y, y_pred)
             # Learn from observation
-            self._model = self._model.learn_one(x, y)
+            self._model.learn_one(x, y)
 
             # Store metric history (for plotting)
             continuous_train_mape_history.append(self._metric.get())
@@ -1502,7 +1500,7 @@ class Model():
     def update_metric(self, real_value, predicted_value):
         """Updates the error metric. It is done in-place!"""
 
-        self._metric = self.metric.update(real_value, predicted_value)
+        self.metric.update(real_value, predicted_value)
 
         return self._metric
 
@@ -1557,7 +1555,7 @@ class Model():
             y_pred = self._model.predict_one(x)
 
             # Update metric
-            metric = metric.update(y, y_pred)
+            metric.update(y, y_pred)
 
             # Store metric history (for plotting)
             metric_history.append(metric.get())

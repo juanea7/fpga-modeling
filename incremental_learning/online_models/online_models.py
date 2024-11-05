@@ -366,7 +366,7 @@ class OnlineModels():
                 # Update metric
                 model.update_metric(label, y_pred)
                 # Update the Training Metric
-                model._training_monitor.train_training_metric = model._training_monitor.train_training_metric.update(label, y_pred)
+                model._training_monitor.train_training_metric.update(label, y_pred)
                 model._training_monitor.train_training_metric_history.append(model._training_monitor.train_training_metric.get())
 
     # TODO: Remove iteration (for plotting)
@@ -480,7 +480,7 @@ class OnlineModels():
                         y_pred = model.predict_one(features)
                         model.update_metric(label, y_pred)
                         # Update training metric
-                        model._training_monitor.train_training_metric = model._training_monitor.train_training_metric.update(label, y_pred)
+                        model._training_monitor.train_training_metric.update(label, y_pred)
                         model._training_monitor.train_training_metric_history.append(model._training_monitor.train_training_metric.get())
                     # Increment "idle" current iteration when "idle"
                     model.increment_idle_phase()
