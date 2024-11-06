@@ -146,7 +146,7 @@ def filter_power_data(power_data, enabled, order, fs, cutoff):
 def process_power_values_zcu(power_data_a,
                                 power_data_b,
                                 power_time,
-                                system_freq,
+                                system_freq_MHz,
                                 rshunt_index_a,
                                 rshunt_index_b):
 
@@ -177,7 +177,7 @@ def process_power_values_zcu(power_data_a,
         (2**adc_resolution * adc_gain * rshunt_b)
 
     # Convert time from cycles to ms
-    x_values = (power_time / (system_freq * 1000))
+    x_values = (power_time / (system_freq_MHz * 1000))
     # Apply the conversion factor to the power values
     y_values_a = (power_data_a * power_conversion_factor_a)
     y_values_b = (power_data_b * power_conversion_factor_b)
@@ -187,7 +187,7 @@ def process_power_values_zcu(power_data_a,
 
 def process_power_values_pynq(power_data,
                                  power_time,
-                                 system_freq):
+                                 system_freq_MHz):
 
     """ Conver from binary value to actual watts """
 
@@ -211,7 +211,7 @@ def process_power_values_pynq(power_data,
         (2**adc_resolution * adc_gain * rshunt)
 
     # Convert time from cycles to ms
-    x_values = (power_time / (system_freq * 1000))
+    x_values = (power_time / (system_freq_MHz * 1000))
     # Apply the conversion factor to the power values
     y_values = (power_data * power_conversion_factor)
     # Returns np arrays
@@ -394,7 +394,7 @@ def slice_traces_data(traces_x_data, traces_y_data, start_time, end_time):
 
 def process_monitor_data(power_buffer,
                         traces_buffer,
-                        system_freq,
+                        system_freq_MHz,
                         num_signals,
                         board,
                         filtering=False):
@@ -428,7 +428,7 @@ def process_monitor_data(power_buffer,
         power_values = process_power_values_zcu(top_power_data,
                                                 bottom_power_data,
                                                 power_time,
-                                                system_freq,
+                                                system_freq_MHz,
                                                 0,
                                                 1)
     elif board == "PYNQ":
@@ -446,7 +446,7 @@ def process_monitor_data(power_buffer,
         # Convert to x and y (watts) values
         power_values = process_power_values_pynq(power_data,
                                                 power_time,
-                                                system_freq)
+                                                system_freq_MHz)
     elif board == "AU250":
         # TODO: Implement this
         raise ValueError(f"Board not supported: {board}")
@@ -466,8 +466,10 @@ def process_monitor_data(power_buffer,
     # Unpack traces
     traces_x_values_list = []
     traces_y_values_list = []
+    # Convert from cycles to ms
+    conversion_factor = system_freq_MHz * 1000  # (1 / conversion_factor) to convert from cycles to ms
     for array in traces_data_list:
-        traces_x_values_list.append(array[:, 0]/100000)
+        traces_x_values_list.append(array[:, 0] / conversion_factor)
         traces_y_values_list.append(np.copy(array[:, 1]))
 
     return power_values, \
@@ -484,6 +486,10 @@ def fragmentate_monitor_measurements_zcu(power_buffer,
     CON.BIN and SIG.BIN files)
     """
 
+    # TODO: Make it customizable
+    system_freq_MHz = 100
+    num_signals = 16
+
     # Process the monitor data (dual)
     [top_power_x_values,\
         top_power_y_values,\
@@ -492,8 +498,8 @@ def fragmentate_monitor_measurements_zcu(power_buffer,
         traces_x_values_list,\
         traces_y_values_list = process_monitor_data(power_buffer,
                                                     traces_buffer,
-                                                    100,
-                                                    16,
+                                                    system_freq_MHz,
+                                                    num_signals,
                                                     board="ZCU",
                                                     filtering=False)
 
@@ -571,14 +577,18 @@ def fragmentate_monitor_measurements_pynq(power_buffer,
     CON.BIN and SIG.BIN files)
     """
 
+    # TODO: Make it customizable
+    system_freq_MHz = 100
+    num_signals = 8
+
     # Process the monitor data (mono)
     [power_x_values,\
         power_y_values],\
         traces_x_values_list,\
         traces_y_values_list = process_monitor_data(power_buffer,
                                                     traces_buffer,
-                                                    100,
-                                                    16,
+                                                    system_freq_MHz,
+                                                    num_signals,
                                                     board="PYNQ",
                                                     filtering=False)
 
