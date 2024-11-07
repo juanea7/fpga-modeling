@@ -20,6 +20,7 @@ Description : This script:
 
 import time
 import sys
+import os
 import argparse
 import threading
 import pickle
@@ -36,7 +37,7 @@ parser = argparse.ArgumentParser()
 
 # Indicate which board has been used
 parser.add_argument("board",
-                    choices=["ZCU", "PYNQ"],
+                    choices=["ZCU", "PYNQ", "AU250"],
                     help="Type of board used")
 
 # This is the correct way to handle accepting multiple arguments.
@@ -52,6 +53,13 @@ parser.add_argument(
     help='<Required> Paths to the input datasets',
     required=True
     )
+# Indicate the path to store the outputs of the script.
+parser.add_argument(
+    '-o',
+    dest="outputs_path",
+    help='<Required> Paths to store the outputs',
+    required=True
+    )
 
 # Indicate the name of the file containing the dataframe used to tsst
 parser.add_argument(
@@ -63,15 +71,37 @@ parser.add_argument(
 
 args = parser.parse_args(sys.argv[1:])
 
+# Set the board
+if args.board == "ZCU":
+    board = {"power": {"rails": "dual",
+                    "process": "zcu"},
+            "traces": {"num_signals": 16,
+                        "freq_MHz": 100},
+            "arch": "64bit"}
+elif args.board == "PYNQ":
+    board = {"power": {"rails": "mono",
+                    "process": "pynq"},
+            "traces": {"num_signals": 8,
+                        "freq_MHz": 100},
+            "arch": "32bit"}
+elif args.board == "AU250":
+    board = {"power": {"rails": "mono",
+                    "process": "au250"},
+            "traces": {"num_signals": 32,
+                        "freq_MHz": 100},
+            "arch": "64bit"}
+else:
+    raise ValueError(F"Board not supported: {args.board}")
+
 # Create thread safe lock
 lock_all = threading.Lock()
 lock_one = threading.Lock()
 lock_adapt = threading.Lock()
 
 # Initialize the online models
-online_models_all = om.OnlineModels(board=args.board, lock=lock_all, train_mode="always_train", capture_all_traces=True)
-online_models_one = om.OnlineModels(board=args.board, lock=lock_one, train_mode="one_train", capture_all_traces=True)
-online_models_adapt = om.OnlineModels(board=args.board, lock=lock_adapt, train_mode="adaptive", capture_all_traces=True)
+online_models_all = om.OnlineModels(power_rails=board["power"]["rails"], lock=lock_all, train_mode="always_train", capture_all_traces=True)
+online_models_one = om.OnlineModels(power_rails=board["power"]["rails"], lock=lock_one, train_mode="one_train", capture_all_traces=True)
+online_models_adapt = om.OnlineModels(power_rails=board["power"]["rails"], lock=lock_adapt, train_mode="adaptive", capture_all_traces=True)
 print("Online Models have been successfully initialized.")
 
 # Time measurement logic
@@ -201,12 +231,14 @@ def pruebas(train_df, online_models, data_save_file_name):
 
 
     # Save the models training monitor
-    with open(f"./model_error_figures/{data_save_file_name}_training_monitors.pkl", 'wb') as file:
+    if not os.path.exists(args.outputs_path):
+        os.makedirs(args.outputs_path)
+    with open(f"{args.outputs_path}/{data_save_file_name}_training_monitors.pkl", 'wb') as file:
         tmp_var = [model._training_monitor for model in online_models._models]
         pickle.dump(tmp_var, file)
 
     # Save the actual models
-    with open(f"./model_error_figures/{data_save_file_name}_models.pkl", 'wb') as file:
+    with open(f"{(args.outputs_path)}/{data_save_file_name}_models.pkl", 'wb') as file:
         tmp_var = [model for model in online_models._models]
         pickle.dump(tmp_var, file)
 
@@ -223,8 +255,8 @@ online_models_adapt = pruebas(train_df, online_models_adapt, "adapt")
 
 # Print training stages
 print("Resultados all:\n")
-online_models_all.print_training_monitor_info()
+online_models_all.print_training_monitor_info(args.outputs_path)
 print("Resultados one:\n")
-online_models_one.print_training_monitor_info()
+online_models_one.print_training_monitor_info(args.outputs_path)
 print("Resultados adapt:\n")
-online_models_adapt.print_training_monitor_info()
+online_models_adapt.print_training_monitor_info(args.outputs_path)

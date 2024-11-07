@@ -57,29 +57,23 @@ def process_observation(observation, board, cpu_usage: False):
 
     # Set the first feature, corresponding with the main kernel of the
     # observation
-    if board == "ZCU":
+    if board["power"]["rails"] == "dual":
         features["Main"] = observation[-5]
-    elif board == "PYNQ":
+    elif board["power"]["rails"] == "mono":
         features["Main"] = observation[-4]
-    elif board == "AU250":
-        # TODO: Implement this
-        raise ValueError(f"Board not supported: {board}")
     else:
-        raise ValueError(f"Board not supported: {board}")
+        raise ValueError(f"Board['power']['rails'] not supported: {board['power']['rails']}")
 
     # Generate a local dict to store observation info
     observation_info = {}
 
     # Obtain a list with the info of all of the kernels in this observation
-    if board == "ZCU":
+    if board["power"]["rails"] == "dual":
         kernels = observation[-4].split('_')
-    elif board == "PYNQ":
+    elif board["power"]["rails"] == "mono":
         kernels = observation[-3].split('_')
-    elif board == "AU250":
-        # TODO: Implement this
-        raise ValueError(f"Board not supported: {board}")
     else:
-        raise ValueError(f"Board not supported: {board}")
+        raise ValueError(f"Board['power']['rails'] not supported: {board['power']['rails']}")
 
     # Iterate over each of the kernels in the observation processing its
     # particular features
@@ -98,16 +92,13 @@ def process_observation(observation, board, cpu_usage: False):
         features[benchmark] = int(observation_info.get(benchmark, 0))
 
     # Add the power and time features of the observation
-    if board == "ZCU":
+    if board["power"]["rails"] == "dual":
         features['Top power'] = observation[-3]
         features['Bottom power'] = observation[-2]
-    elif board == "PYNQ":
+    elif board["power"]["rails"] == "mono":
         features['Power'] = observation[-2]
-    elif board == "AU250":
-        # TODO: Implement this
-        raise ValueError(f"Board not supported: {board}")
     else:
-        raise ValueError(f"Board not supported: {board}")
+        raise ValueError(f"Board['power']['rails'] not supported: {board['power']['rails']}")
     features['Time'] = observation[-1]
 
     return features

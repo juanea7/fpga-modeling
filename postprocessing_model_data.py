@@ -41,11 +41,11 @@ def show_model_data(online_models_data, board):
 
     # Extract data from online models data
     models_list = []
-    if board == "ZCU":
+    if board["power"]["rails"] == "dual":
         models_list.append(online_models_data[0])
         models_list.append(online_models_data[1])
         models_list.append(online_models_data[2])
-    elif board == "PYNQ":
+    elif board["power"]["rails"] == "mono":
         models_list.append(online_models_data[0])
         models_list.append(online_models_data[1])
     else:
@@ -119,114 +119,6 @@ def show_model_data(online_models_data, board):
 
         # Plot the figure
         plt.show()
-
-
-
-
-
-    # for model_index in range(3):
-    #     # Create a 2x2 grid of subplots within the same figure
-    #     fig, ax1 = plt.subplots(nrows=1, ncols=1, sharex=True, constrained_layout=False)
-
-    #     fig.supxlabel('Number of Observations')
-    #     fig.suptitle('Error Metrics!!')
-
-
-    #     if model_index == 0:
-    #         # Add colored background spans to the plot (train)
-    #         for xmin, xmax in top_training_monitor.train_train_regions:
-    #             ax1.axvspan(
-    #                 xmin, xmax, alpha=0.4,
-    #                 color=top_training_monitor.train_train_regions_color,
-    #                 zorder=0
-    #                 )
-    #         # Add colored background spans to the plot (test)
-    #         for xmin, xmax in top_training_monitor.test_test_regions:
-    #             ax1.axvspan(
-    #                 xmin, xmax, alpha=0.4,
-    #                 color=top_training_monitor.test_test_regions_color,
-    #                 zorder=0
-    #                 )
-    #         # Plot model metrics
-    #         ax1.plot(
-    #             top_training_monitor.train_training_metric_history,
-    #             label="adaptative_training_history",
-    #             color='tab:green',
-    #             zorder=2
-    #             )
-    #         # Set Y limit
-    #         ax1.set_ylim([-0.5, 14.5])
-    #     if model_index == 1:
-    #         # Add colored background spans to the plot (train)
-    #         for xmin, xmax in bottom_training_monitor.train_train_regions:
-    #             ax1.axvspan(
-    #                 xmin, xmax, alpha=0.4,
-    #                 color=bottom_training_monitor.train_train_regions_color,
-    #                 zorder=0
-    #                 )
-    #         # Add colored background spans to the plot (test)
-    #         for xmin, xmax in bottom_training_monitor.test_test_regions:
-    #             ax1.axvspan(
-    #                 xmin, xmax, alpha=0.4,
-    #                 color=bottom_training_monitor.test_test_regions_color,
-    #                 zorder=0
-    #                 )
-    #         # Plot model metrics
-    #         ax1.plot(
-    #             bottom_training_monitor.train_training_metric_history,
-    #             label="adaptative_training_history",
-    #             color='tab:green',
-    #             zorder=2
-    #             )
-    #         # Set Y limit
-    #         ax1.set_ylim([-0.5, 14.5])
-    #     if model_index == 2:
-    #         # Add colored background spans to the plot (train)
-    #         for xmin, xmax in time_training_monitor.train_train_regions:
-    #             ax1.axvspan(
-    #                 xmin, xmax, alpha=0.4,
-    #                 color=time_training_monitor.train_train_regions_color,
-    #                 zorder=0
-    #                 )
-    #         # Add colored background spans to the plot (test)
-    #         for xmin, xmax in time_training_monitor.test_test_regions:
-    #             ax1.axvspan(
-    #                 xmin, xmax, alpha=0.4,
-    #                 color=time_training_monitor.test_test_regions_color,
-    #                 zorder=0
-    #                 )
-    #         # Plot model metrics
-    #         ax1.plot(
-    #             time_training_monitor.train_training_metric_history,
-    #             label="adaptative_training_history",
-    #             color='tab:green',
-    #             zorder=2
-    #             )
-    #         # Set Y limit
-    #         ax1.set_ylim([-0.5, 60.5])
-
-    #     # Set Y label, grid and legend
-    #     ax1.set_ylabel("% error", color='k')
-    #     ax1.tick_params(axis='y', labelcolor='k')
-    #     ax1.grid(True)
-    #     ax1.legend()
-    #     plt.tight_layout()  # Adjust subplot spacing
-
-    #     # Create directory if it does not exit
-    #     #model_error_figures_dir = "./model_error_figures"
-    #     #if not os.path.exists(model_error_figures_dir):
-    #     #    os.makedirs(model_error_figures_dir)
-
-    #     # # Ask the user for the figure name
-    #     # figure_save_file_name = input("Give me name to save this figure with "
-    #     #                                 f"(path:{model_error_figures_dir}/<name>.pkl): ")
-
-    #     # # Save the figure
-    #     # with open(f"{model_error_figures_dir}/{figure_save_file_name}.pkl", 'wb') as file:
-    #     #     pickle.dump(fig, file)
-
-    #     # Plot the figure
-    #     plt.show()
 
 
 def show_model_data_with_time(online_models_data, times_list):
@@ -389,7 +281,7 @@ if __name__ == "__main__":
         '-b',
         dest="board",
         help='<Required> Board used for the training',
-        choices=["ZCU", "PYNQ"],
+        choices=["ZCU", "PYNQ", "AU250"],
         required=True
         )
 
@@ -411,12 +303,35 @@ if __name__ == "__main__":
 
     args = parser.parse_args(sys.argv[1:])
 
+    # Set the board
+    if args.board == "ZCU":
+        board = {"power": {"rails": "dual",
+                        "process": "zcu"},
+                "traces": {"num_signals": 16,
+                            "freq_MHz": 100},
+                "arch": "64bit"}
+    elif args.board == "PYNQ":
+        board = {"power": {"rails": "mono",
+                        "process": "pynq"},
+                "traces": {"num_signals": 8,
+                            "freq_MHz": 100},
+                "arch": "32bit"}
+    elif args.board == "AU250":
+        board = {"power": {"rails": "mono",
+                        "process": "au250"},
+                "traces": {"num_signals": 32,
+                            "freq_MHz": 100},
+                "arch": "64bit"}
+    else:
+        raise ValueError(F"Board not supported: {args.board}")
+
+
     # Open models data
     with open(args.models_training_monitors_path, "rb") as file:
         online_models_obj = pickle.load(file)
 
     # Generate figures
-    show_model_data(online_models_obj, args.board)
+    show_model_data(online_models_obj, board)
 
     if args.temporal_data_path is not None:
 

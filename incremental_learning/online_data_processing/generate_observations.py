@@ -35,16 +35,14 @@ def calculate_continuous_series_arithmetic_mean(my_list):
     return np.mean(groups_middle_points)
 
 
-def get_average_observation_features_from_data_zcu(observation_name,
+def get_average_observation_features_from_data_power_dual(observation_name,
                                                       top_power_x_values,
                                                       top_power_y_values,
                                                       bottom_power_x_values,
                                                       bottom_power_y_values,
                                                       traces_x_values_list,
                                                       traces_y_values_list,
-                                                      accelerator_position,
-                                                      num_signals=16,
-                                                      system_freq=100):
+                                                      accelerator_position):
     """ Obtains model features from observations
         (performing a mean between all the available executions
     """
@@ -113,14 +111,12 @@ def get_average_observation_features_from_data_zcu(observation_name,
             execution_time]
 
 
-def get_average_observation_features_from_data_pynq(observation_name,
+def get_average_observation_features_from_data_power_mono(observation_name,
                                                        power_x_values,
                                                        power_y_values,
                                                        traces_x_values_list,
                                                        traces_y_values_list,
-                                                       accelerator_position,
-                                                       num_signals=16,
-                                                       system_freq=100):
+                                                       accelerator_position):
     """ Obtains model features from observations
         (performing a mean between all the available executions
     """
@@ -186,28 +182,23 @@ def get_average_observation_features_from_data_pynq(observation_name,
 
 # Map board to functions
 observation_functions = {
-    "ZCU": get_average_observation_features_from_data_zcu,
-    "PYNQ": get_average_observation_features_from_data_pynq,
-    # TODO: Implement AU250
+    "dual": get_average_observation_features_from_data_power_dual,
+    "mono": get_average_observation_features_from_data_power_mono
 }
 
 def get_average_observation_features_from_data(observation_name,
                                                 power_values_lists,
                                                 traces_values_lists,
                                                 accelerator_position,
-                                                board,
-                                                num_signals=16,
-                                                system_freq=100):
+                                                board):
     """ Obtains model features from observations
         (performing a mean between all the available executions
     """
 
-    if board not in observation_functions:
-        raise ValueError(f"Board not recognized: {board}")
-    
-    return observation_functions[board](observation_name,
-                                        *power_values_lists,
-                                        *traces_values_lists,
-                                        accelerator_position,
-                                        num_signals,
-                                        system_freq)
+    if board["power"]["rails"] not in observation_functions:
+        raise ValueError(f"Board['power']['rails'] not recognized: {board['power']['rails']}")
+
+    return observation_functions[board["power"]["rails"]](observation_name,
+                                                          *power_values_lists,
+                                                          *traces_values_lists,
+                                                          accelerator_position)

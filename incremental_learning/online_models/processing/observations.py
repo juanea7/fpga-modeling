@@ -47,7 +47,7 @@ def sample_observations(df):
     return train_set, test_set
 
 
-def dataset_formating_zcu(dataframe):
+def dataset_formating_dual(dataframe):
     """Format a dataset extracting top power, bottom power and time features
        and labels
     """
@@ -74,7 +74,7 @@ def dataset_formating_zcu(dataframe):
     return [features_df, top_power_labels_df, bottom_power_labels_df, time_labels_df]
 
 
-def dataset_formating_pynq(dataframe):
+def dataset_formating_mono(dataframe):
     """Format a dataset extracting power and time features
        and labels
     """
@@ -100,21 +100,20 @@ def dataset_formating_pynq(dataframe):
 
 # Map board to functions
 formating_functions = {
-    "ZCU": dataset_formating_zcu,
-    "PYNQ": dataset_formating_pynq
-    # TODO: Implement AU250
+    "dual": dataset_formating_dual,
+    "mono": dataset_formating_mono
 }
 
 
-def dataset_formating(dataframe, board):
+def dataset_formating(dataframe, power_rails):
     """Format a dataset extracting power and time features
        and labels
     """
 
-    if board not in formating_functions:
-        raise ValueError(f"Board not supported: {board}")
-    
-    return formating_functions[board](dataframe)
+    if power_rails not in formating_functions:
+        raise ValueError(f"power_rails not supported: {power_rails}")
+
+    return formating_functions[power_rails](dataframe)
 
 
 if __name__ == "__main__":

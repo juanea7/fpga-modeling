@@ -740,7 +740,7 @@ class Model():
         metric : river metric
             The metric to be used for the online learning process.
         model_type : str
-            The type of the rivel model ("PS", "PL2, "PS+PL", "Time").
+            The type of the rivel model ("PS", "PL", "PS+PL", "Time").
         train_mode : str
             The training mode to be used for the online learning process ("adaptive", "always_train", "one_train").
         capture_all_traces : bool

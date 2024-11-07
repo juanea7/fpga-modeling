@@ -87,8 +87,8 @@ class FeatureswoCPUUsage(ct.Structure):
         return dict((f, getattr(self, f)) for f, _ in self._fields_)
 
 
-class PredictionZCU(ct.Structure):
-    """ Prediction (ZCU) - This class defines a C-like struct """
+class PredictionDual(ct.Structure):
+    """ Prediction (Dual) - This class defines a C-like struct """
     _fields_ = [
         ("top_power", ct.c_float),
         ("bottom_power", ct.c_float),
@@ -96,16 +96,16 @@ class PredictionZCU(ct.Structure):
     ]
 
 
-class PredictionPYNQ(ct.Structure):
-    """ Prediction (PYNQ) - This class defines a C-like struct """
+class PredictionMono(ct.Structure):
+    """ Prediction (Mono) - This class defines a C-like struct """
     _fields_ = [
         ("power", ct.c_float),
         ("time", ct.c_float)
     ]
 
 
-class MetricsZCU(ct.Structure):
-    """ Errro Metrics (ZCU) - This class defines a C-like struct """
+class MetricsDual(ct.Structure):
+    """ Errro Metrics (Dual) - This class defines a C-like struct """
     _fields_ = [
         ("ps_power_error", ct.c_float),
         ("pl_power_error", ct.c_float),
@@ -113,8 +113,8 @@ class MetricsZCU(ct.Structure):
     ]
 
 
-class MetricsPYNQ(ct.Structure):
-    """ Errro Metrics (PYNQ) - This class defines a C-like struct """
+class MetricsMono(ct.Structure):
+    """ Errro Metrics (Mono) - This class defines a C-like struct """
     _fields_ = [
         ("power_error", ct.c_float),
         ("time_error", ct.c_float)
@@ -162,13 +162,13 @@ def training_thread_file_func(online_models, tcp_socket, board, cpu_usage):
         else:
             print("We are Testing!")
             # Generate tmp metrics
-            if board == "ZCU":
+            if board["power"]["rails"] == "dual":
                 test_metrics = [
                     river.metrics.RMSE(),
                     river.metrics.RMSE(),
                     river.metrics.RMSE()
                     ]
-            elif board == "PYNQ":
+            elif board["power"]["rails"] == "mono":
                 test_metrics = [
                     river.metrics.RMSE(),
                     river.metrics.RMSE()
@@ -241,7 +241,7 @@ def training_thread_file_func(online_models, tcp_socket, board, cpu_usage):
                 # Test batch with the online models
                 test_metrics = online_models.test_s(dataframe, test_metrics)
 
-            if board == "ZCU":
+            if board["power"]["rails"] == "dual":
                 # Different behaviour depending if is training or testing
                 if is_training:
                     tmp_top_metric, tmp_bottom_metric, tmp_time_metric = \
@@ -251,7 +251,7 @@ def training_thread_file_func(online_models, tcp_socket, board, cpu_usage):
                         test_metrics
 
                 # Generate c-like structure containing the model error metrics
-                metrics_to_send = MetricsZCU(
+                metrics_to_send = MetricsDual(
                     tmp_top_metric,
                     tmp_bottom_metric,
                     tmp_time_metric
@@ -262,7 +262,7 @@ def training_thread_file_func(online_models, tcp_socket, board, cpu_usage):
                     f"{tmp_bottom_metric} (bottom) | {tmp_time_metric} (time)"
                     )
 
-            elif board == "PYNQ":
+            elif board["power"]["rails"] == "mono":
                 # Different behaviour depending if is training or testing
                 if is_training:
                     tmp_power_metric, tmp_time_metric = \
@@ -271,7 +271,7 @@ def training_thread_file_func(online_models, tcp_socket, board, cpu_usage):
                     tmp_power_metric, tmp_time_metric = test_metrics
 
                 # Generate c-like structure containing the model error metrics
-                metrics_to_send = MetricsPYNQ(
+                metrics_to_send = MetricsMono(
                     tmp_power_metric,
                     tmp_time_metric
                 )
@@ -306,14 +306,14 @@ def training_thread_file_func(online_models, tcp_socket, board, cpu_usage):
     else:
         print(f"[{'Training Thread (f)':^19}] No processing was made")
 
-    if board == "ZCU":
+    if board["power"]["rails"] == "dual":
         tmp_top_metric, tmp_bottom_metric, tmp_time_metric = \
             online_models.get_metrics()
         print(
             f"[{'Training Thread (f)':^19}] Training Metrics: {tmp_top_metric} (top) | "
             f"{tmp_bottom_metric} (bottom) | {tmp_time_metric} (time)"
             )
-    elif board == "PYNQ":
+    elif board["power"]["rails"] == "mono":
         tmp_power_metric, tmp_time_metric = online_models.get_metrics()
         print(
             f"[{'Training Thread (f)':^19}] Training Metrics: {tmp_power_metric} (top) | "
@@ -670,14 +670,13 @@ def training_thread_ram_func(online_models, tcp_socket, board, cpu_usage):
             model._training_monitor.test_test_regions[-1].append(iteration-1)
     ###############
 
-    # Generar gráficas
-    # online_models.print_training_monitor_info()
-
     # Guardar temporal data y modelos en fichero (online_models y temporal_data)
     # Create directory if it does not exit
     model_error_figures_dir = "./model_error_figures"
     if not os.path.exists(model_error_figures_dir):
         os.makedirs(model_error_figures_dir)
+    # Generar gráficas
+    # online_models.print_training_monitor_info(model_error_figures_dir)
 
     # Ask the user for the figure name
     data_save_file_name = input("Give me name to save models object and temporal data "
@@ -693,14 +692,14 @@ def training_thread_ram_func(online_models, tcp_socket, board, cpu_usage):
         pickle.dump(temporal_data, file)
 
 
-    if board == "ZCU":
+    if board["power"]["rails"] == "dual":
         tmp_top_metric, tmp_bottom_metric, tmp_time_metric = \
             online_models.get_metrics()
         print(
             f"[{'Training Thread (r)':^19}] Training Metrics: {tmp_top_metric} (top) | "
             f"{tmp_bottom_metric} (bottom) | {tmp_time_metric} (time)"
             )
-    elif board == "PYNQ":
+    elif board["power"]["rails"] == "mono":
         tmp_power_metric, tmp_time_metric = online_models.get_metrics()
         print(
             f"[{'Training Thread (r)':^19}] Training Metrics: {tmp_power_metric} (power) | "
@@ -805,13 +804,13 @@ def training_thread_ram_func_old(online_models, tcp_socket, board, cpu_usage):
         else:
             print("We are Testing!")
             # Generate tmp metrics
-            if board == "ZCU":
+            if board["power"]["rails"] == "dual":
                 test_metrics = [
                     river.metrics.RMSE(),
                     river.metrics.RMSE(),
                     river.metrics.RMSE(),
                     ]
-            elif board == "PYNQ":
+            elif board["power"]["rails"] == "mono":
                 test_metrics = [
                     river.metrics.RMSE(),
                     river.metrics.RMSE(),
@@ -927,7 +926,7 @@ def training_thread_ram_func_old(online_models, tcp_socket, board, cpu_usage):
 
             t_inter6 = time.time()
 
-            if board == "ZCU":
+            if board["power"]["rails"] == "dual":
                 # Different behaviour depending if is training or testing
                 if is_training:
                     tmp_top_metric, tmp_bottom_metric, tmp_time_metric = \
@@ -937,7 +936,7 @@ def training_thread_ram_func_old(online_models, tcp_socket, board, cpu_usage):
                         test_metrics
 
                 # Generate c-like structure containing the model error metrics
-                metrics_to_send = MetricsZCU(
+                metrics_to_send = MetricsDual(
                     tmp_top_metric.get(),
                     tmp_bottom_metric.get(),
                     tmp_time_metric.get()
@@ -948,7 +947,7 @@ def training_thread_ram_func_old(online_models, tcp_socket, board, cpu_usage):
                     f"{tmp_bottom_metric} (bottom) | {tmp_time_metric} (time)"
                     )
 
-            elif board == "PYNQ":
+            elif board["power"]["rails"] == "mono":
                 # Different behaviour depending if is training or testing
                 if is_training:
                     tmp_power_metric, tmp_time_metric = \
@@ -957,7 +956,7 @@ def training_thread_ram_func_old(online_models, tcp_socket, board, cpu_usage):
                     tmp_power_metric, tmp_time_metric = test_metrics
 
                 # Generate c-like structure containing the model error metrics
-                metrics_to_send = MetricsPYNQ(
+                metrics_to_send = MetricsMono(
                     tmp_power_metric.get(),
                     tmp_time_metric.get()
                 )
@@ -1034,14 +1033,14 @@ def training_thread_ram_func_old(online_models, tcp_socket, board, cpu_usage):
     else:
         print(f"[{'Training Thread (r)':^19}] No processing was made")
 
-    if board == "ZCU":
+    if board["power"]["rails"] == "dual":
         tmp_top_metric, tmp_bottom_metric, tmp_time_metric = \
             online_models.get_metrics()
         print(
             f"[{'Training Thread (r)':^19}] Training Metrics: {tmp_top_metric} (top) | "
             f"{tmp_bottom_metric} (bottom) | {tmp_time_metric} (time)"
             )
-    elif board == "PYNQ":
+    elif board["power"]["rails"] == "mono":
         tmp_power_metric, tmp_time_metric = online_models.get_metrics()
         print(
             f"[{'Training Thread (r)':^19}] Training Metrics: {tmp_power_metric} (power) | "
@@ -1096,7 +1095,7 @@ def prediction_thread_func(online_models, tcp_socket, board, cpu_usage):
 
             # t1 = time.time()
 
-            if board == "ZCU":
+            if board["power"]["rails"] == "dual":
                 top_power_prediction, \
                     bottom_power_prediction, \
                     time_prediction = \
@@ -1105,12 +1104,12 @@ def prediction_thread_func(online_models, tcp_socket, board, cpu_usage):
                 # t2 = time.time()
 
                 # Generate c-like structure for predictions
-                prediction = PredictionZCU(
+                prediction = PredictionDual(
                     top_power_prediction,
                     bottom_power_prediction,
                     time_prediction
                 )
-            elif board == "PYNQ":
+            elif board["power"]["rails"] == "mono":
                 power_prediction, \
                     time_prediction = \
                     online_models.predict_one(features)
@@ -1118,7 +1117,7 @@ def prediction_thread_func(online_models, tcp_socket, board, cpu_usage):
                 # t2 = time.time()
 
                 # Generate c-like structure for predictions
-                prediction = PredictionPYNQ(
+                prediction = PredictionMono(
                     power_prediction,
                     time_prediction
                 )
@@ -1165,14 +1164,14 @@ def prediction_thread_func(online_models, tcp_socket, board, cpu_usage):
             i += 1
 
             # test
-            # if board == "ZCU":
+            # if board["power"]["rails"] == "dual":
             #     tmp_top_metric, tmp_bottom_metric, tmp_time_metric = \
             #         online_models.get_metrics()
             #     print(
             #         f"[{'Prediction Thread':^19}] Training Metrics: {tmp_top_metric} (top) | "
             #         f"{tmp_bottom_metric} (bottom) | {tmp_time_metric} (time)"
             #         )
-            # elif board == "PYNQ":
+            # elif board["power"]["rails"] == "mono":
             #     tmp_power_metric, tmp_time_metric = online_models.get_metrics()
             #     print(
             #         f"[{'Prediction Thread':^19}] Training Metrics: {tmp_power_metric} (power) | "
@@ -1210,13 +1209,35 @@ if __name__ == "__main__":
 
     # Indicate which board has been used
     parser.add_argument("board",
-                        choices=["ZCU", "PYNQ"],
+                        choices=["ZCU", "PYNQ", "AU250"],
                         help="Type of board used")
 
     # Indicate if cpu usage or not (default is true)
     parser.add_argument('--no-cpu-usage', action='store_true')
 
     args = parser.parse_args(sys.argv[1:])
+
+    # Set the board
+    if args.board == "ZCU":
+        board = {"power": {"rails": "dual",
+                        "process": "zcu"},
+                "traces": {"num_signals": 16,
+                            "freq_MHz": 100},
+                "arch": "64bit"}
+    elif args.board == "PYNQ":
+        board = {"power": {"rails": "mono",
+                        "process": "pynq"},
+                "traces": {"num_signals": 8,
+                            "freq_MHz": 100},
+                "arch": "32bit"}
+    elif args.board == "AU250":
+        board = {"power": {"rails": "mono",
+                        "process": "au250"},
+                "traces": {"num_signals": 32,
+                            "freq_MHz": 100},
+                "arch": "64bit"}
+    else:
+        raise ValueError(F"Board not supported: {args.board}")
 
     # Variable indicating cpu usage
     cpu_usage_flag = not args.no_cpu_usage
@@ -1231,11 +1252,11 @@ if __name__ == "__main__":
 
     # Select the prediction and metrics structure based on the board used
     if args.board == "ZCU":
-        Prediction = PredictionZCU
-        Metrics = MetricsZCU
+        Prediction = PredictionDual
+        Metrics = MetricsDual
     else:
-        Prediction = PredictionPYNQ
-        Metrics = MetricsPYNQ
+        Prediction = PredictionMono
+        Metrics = MetricsMono
 
     # Select the appropriate features structure based on cpu usage availability
     if cpu_usage_flag:
@@ -1263,7 +1284,8 @@ if __name__ == "__main__":
     lock = threading.Lock()
 
     # Initialize the online models
-    incremental_models = om.OnlineModels(board=args.board, lock=lock)
+    incremental_models = om.OnlineModels(power_rails=board["power"]["rails"], lock=lock)
+    # incremental_models = om.OnlineModels(power_rails=board["power"]["rails"], lock=lock, train_mode="always_train", capture_all_traces=True)  # Train forever (for the paper)
     print(f"[{'Main Thread':^19}] Online Models have been successfully initialized.")
 
     # Create the training and prediction threads
@@ -1271,14 +1293,14 @@ if __name__ == "__main__":
         target=training_thread_func,
         args=(incremental_models,
               tcp_train_socket,
-              args.board,
+              board,
               cpu_usage_flag)
     )
     prediction_thread = threading.Thread(
         target=prediction_thread_func,
         args=(incremental_models,
               tcp_prediction_socket,
-              args.board,
+              board,
               cpu_usage_flag)
     )
     print(f"[{'Main Thread':^19}] Both threads have been successfully created.")

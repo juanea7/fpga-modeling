@@ -63,7 +63,7 @@ parser = argparse.ArgumentParser()
 
 # Indicate which board has been used
 parser.add_argument("board",
-                    choices=["ZCU", "PYNQ"],
+                    choices=["ZCU", "PYNQ", "AU250"],
                     help="Type of board used")
 
 # Indicate the path to read traces from
@@ -78,6 +78,28 @@ parser.add_argument("-o", dest="output_path", default="output_obs",
 parser.add_argument('--no-cpu-usage', action='store_true')
 
 args = parser.parse_args(sys.argv[1:])
+
+# Set the board
+if args.board == "ZCU":
+    board = {"power": {"rails": "dual",
+                       "process": "zcu"},
+             "traces": {"num_signals": 16,
+                        "freq_MHz": 100},
+             "arch": "64bit"}
+elif args.board == "PYNQ":
+    board = {"power": {"rails": "mono",
+                       "process": "pynq"},
+             "traces": {"num_signals": 8,
+                        "freq_MHz": 100},
+             "arch": "32bit"}
+elif args.board == "AU250":
+    board = {"power": {"rails": "mono",
+                       "process": "au250"},
+             "traces": {"num_signals": 32,
+                        "freq_MHz": 100},
+             "arch": "64bit"}
+else:
+    raise ValueError(F"Board not supported: {args.board}")
 
 # Variable indicating cpu usage
 cpu_usage_flag = not args.no_cpu_usage
@@ -136,7 +158,7 @@ for filename in os.listdir(output_data_path):
             curr_output_path,
             curr_power_path,
             curr_traces_path,
-            args.board,
+            board,
             cpu_usage=cpu_usage_flag
         )
 
@@ -155,7 +177,7 @@ for filename in os.listdir(output_data_path):
 
     # Create dataframe just for this online_data file
     df = odp.generate_dataframe_from_observations(generated_obs,
-                                                  args.board,
+                                                  board,
                                                   cpu_usage=cpu_usage_flag)
     # print(df)
 

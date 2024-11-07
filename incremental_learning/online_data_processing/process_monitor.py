@@ -100,7 +100,7 @@ def generate_bar_diagram_data_process(slots, monitor_data):
 
 
 @multimethod
-def extract_monitoring_window_info(filename: str, cpu_usage: bool, board: str):
+def extract_monitoring_window_info(filename: str, cpu_usage: bool, board: dict):
     """Extracts info of the monitoring window from a file.
        Info such as window start and stop time, kernels per slot, etc.
 
@@ -149,21 +149,20 @@ def extract_monitoring_window_info(filename: str, cpu_usage: bool, board: str):
     """
 
     # Format of the data structures inside the file
-    if board == "ZCU":
+    if board["arch"] == "64bit":
         # Use native size (8 bytes for long (l), same on ZCU timespec)
         cpu_usage_format = "f"
         monitor_data_format = "6l"
         kernel_data_format = "1i4l"
         separator_format = "i"
-    elif board == "PYNQ":
+    elif board["arch"] == "32bit":
         # Use standard size (4 bytes for long (l), same on PYNQ timespec)
         cpu_usage_format = "=f"
         monitor_data_format = "=6l"
         kernel_data_format = "=1i4l"
         separator_format = "=i"
     else:
-        # TODO: Implement AU250
-        raise ValueError(f"Board {board} not supported.")
+        raise ValueError(f"Board['arch'] {board['arch']} not supported.")
 
     # Calculate the size of each data structure
     cpu_usage_size = struct.calcsize(cpu_usage_format)
@@ -300,7 +299,7 @@ def extract_monitoring_window_info(filename: str, cpu_usage: bool, board: str):
 
 
 @multimethod
-def extract_monitoring_window_info(buffer: memoryview, cpu_usage: bool, board: str):
+def extract_monitoring_window_info(buffer: memoryview, cpu_usage: bool, board: dict):
     """Extracts info of the monitoring window from a file.
        Info such as window start and stop time, kernels per slot, etc.
 
@@ -348,21 +347,20 @@ def extract_monitoring_window_info(buffer: memoryview, cpu_usage: bool, board: s
     """
 
     # Format of the data structures inside the file
-    if board == "ZCU":
+    if board["arch"] == "64bit":
         # Use native size (8 bytes for long (l), same on ZCU timespec)
         cpu_usage_format = "f"
         monitor_data_format = "6l"
         kernel_data_format = "1i4l"
         separator_format = "i"
-    elif board == "PYNQ":
+    elif board["arch"] == "32bit":
         # Use standard size (4 bytes for long (l), same on PYNQ timespec)
         cpu_usage_format = "=f"
         monitor_data_format = "=6l"
         kernel_data_format = "=1i4l"
         separator_format = "=i"
     else:
-        # TODO: Implement AU250
-        raise ValueError(f"Board {board} not supported.")
+        raise ValueError(f"Board['arch'] {board['arch']} not supported.")
 
     # Calculate the size of each data structure
     cpu_usage_size = struct.calcsize(cpu_usage_format)

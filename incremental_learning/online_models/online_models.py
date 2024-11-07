@@ -49,7 +49,7 @@ class OnlineModels():
     """Class that groups and handle each model as a whole."""
 
     def __init__(self,
-                 board,
+                 power_rails,
                  lock,
                  input_models=None,
                  train_mode="adaptive",
@@ -59,8 +59,8 @@ class OnlineModels():
 
         Parameters
         ----------
-        board : str
-            The board to be used. It can be "ZCU" or "PYNQ".
+        power_rails : str
+            The power_rails to be used. It can be "mono" or "dual".
         lock : multiprocessing.Lock
             Lock to be used for thread safety.
         input_models : list, optional
@@ -71,12 +71,11 @@ class OnlineModels():
             Flag to indicate if all the traces are going to be captured, not just the ones that are going to be used for training.
         """
 
-        # Check if the board is valid and set the number of models
-        # TODO: Implement new boards (AU250)
-        num_models = 3 if board == "ZCU" else 2 if board == "PYNQ" else None
+        # Check if the power_rails is valid and set the number of models
+        num_models = 3 if power_rails == "dual" else 2 if power_rails == "mono" else None
         if num_models is None:
-            raise ValueError(f"Board {board} not supported.")
-        self._board = board
+            raise ValueError(f"power_rails {power_rails} not supported.")
+        self._power_rails = power_rails
 
         # Get the input models
         if input_models is None:
@@ -85,20 +84,19 @@ class OnlineModels():
             raise ValueError("The number of input models does not match the number of models.")
 
         # Initialize the models
-        if board == "ZCU":
+        if power_rails == "dual":
             self._models = [
                 models.PowerModel("PS",input_model=input_models[0], train_mode=train_mode, capture_all_traces=capture_all_traces),
                 models.PowerModel("PL",input_model=input_models[1], train_mode=train_mode, capture_all_traces=capture_all_traces),
                 models.TimeModel(input_model=input_models[2], train_mode=train_mode, capture_all_traces=capture_all_traces)
                 ]
-        elif board == "PYNQ":
+        elif power_rails == "mono":
             self._models = [
                 models.PowerModel("PS+PL",input_model=input_models[0], train_mode=train_mode, capture_all_traces=capture_all_traces),
                 models.TimeModel(input_model=input_models[1], train_mode=train_mode, capture_all_traces=capture_all_traces)
                 ]
         else:
-            # TODO: Implement AU250
-            raise ValueError(f"Board {board} not supported.")
+            raise ValueError(f"power_rails {power_rails} not supported.")
 
         # Set the training mode
         self._train_mode = train_mode
@@ -119,11 +117,11 @@ class OnlineModels():
 
         self._lock = lock
 
-    def _preprocess_dataframe(self, df, board):
+    def _preprocess_dataframe(self, df, power_rails):
         """Preprocess a dataframe for train/test."""
 
         # Format the dataframe ([features_df, x_model_labels_df, y_model_labels_df, ...])
-        formated_dataset = processing.dataset_formating(df, board)
+        formated_dataset = processing.dataset_formating(df, power_rails)
 
         # Concatenate the DataFrames along the columns axis
         concatenated_labels_df = pd.concat(formated_dataset[1:], axis=1)
@@ -343,7 +341,7 @@ class OnlineModels():
         """Update the Training Monitor when in idle (for the paper)."""
 
         # Preprocess dataframe
-        features_df, concatenated_labels_df = self._preprocess_dataframe(train_df, self._board)
+        features_df, concatenated_labels_df = self._preprocess_dataframe(train_df, self._power_rails)
 
         # Acquire lock - Freeze models
         # TODO: el deepcopy cada vez tarda más... segundos
@@ -374,7 +372,7 @@ class OnlineModels():
         """(Thread Safe)Test the models with a dataframe. Update the Training Monitor."""
 
         # Preprocess dataframe
-        features_df, concatenated_labels_df = self._preprocess_dataframe(train_df, self._board)
+        features_df, concatenated_labels_df = self._preprocess_dataframe(train_df, self._power_rails)
 
         # Get the number of observations in the df
         obs_to_train = len(train_df)
@@ -443,7 +441,7 @@ class OnlineModels():
         """(Thread Safe) Test the models on a dataframe. Update the Training Monitor."""
 
         # Preprocess dataframe
-        features_df, concatenated_labels_df = self._preprocess_dataframe(test_df, self._board)
+        features_df, concatenated_labels_df = self._preprocess_dataframe(test_df, self._power_rails)
 
         # Get the number of observations in the df
         obs_to_test = len(test_df)
@@ -531,7 +529,7 @@ class OnlineModels():
             metrics = [None] * len(self._models)
 
         # Preprocess the dataframe
-        formated_dataset = processing.dataset_formating(test_df, self._board)
+        formated_dataset = processing.dataset_formating(test_df, self._power_rails)
 
         # Get the features and labels
         features_df = formated_dataset[0]
@@ -624,7 +622,7 @@ class OnlineModels():
         elif mode == "test":
             return iteration, mode, training_monitor_info["minimum_test_test_round_obs_left"]
 
-    def _print_training_monitor_info(self):
+    def _print_training_monitor_info(self, output_path):
 
 
         # TODO: Not used on-chip. Handle this properly
@@ -682,7 +680,7 @@ class OnlineModels():
             plt.tight_layout()  # Adjust subplot spacing
 
             # Create directory if it does not exit
-            model_error_figures_dir = "./model_error_figures"
+            model_error_figures_dir = output_path
             if not os.path.exists(model_error_figures_dir):
                 os.makedirs(model_error_figures_dir)
 
@@ -710,7 +708,7 @@ class OnlineModels():
         [features_df, \
             top_power_labels_df, \
             bottom_power_labels_df, \
-            time_labels_df] = processing.dataset_formating(train_df, board="ZCU")
+            time_labels_df] = processing.dataset_formating(train_df, power_rails="dual")
 
         # General variables
         outputs_dir = "/media/juan/HDD/tmp/model_error_figures_grid_search"
@@ -984,7 +982,7 @@ class OnlineModels():
         [features_df, \
             top_power_labels_df, \
             bottom_power_labels_df, \
-            time_labels_df] = processing.dataset_formating(train_df, board="ZCU")
+            time_labels_df] = processing.dataset_formating(train_df, power_rails="dual")
 
         # General variables
         outputs_dir = "/media/juan/HDD/tmp/model_error_figures_grid_search"
@@ -1277,7 +1275,7 @@ if __name__ == "__main__":
     training_df, testing_df = processing.sample_observations(obs_df)
 
     # Initialize the models
-    online_models = OnlineModels(board="ZCU", lock=threading.Lock)
+    online_models = OnlineModels(power_rails="dual", lock=threading.Lock)
 
     # Old format
     training_df = training_df.drop(["Order"], axis=1)

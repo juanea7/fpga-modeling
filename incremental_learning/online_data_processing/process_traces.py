@@ -17,7 +17,7 @@ from .find_elements import get_closest_element_below
 
 
 @multimethod
-def read_power_data(path: str, board: str):
+def read_power_data(path: str, board: dict):
     """ Reads the data from the power consumption file
     """
 
@@ -32,7 +32,7 @@ def read_power_data(path: str, board: str):
     # print("\npower_data_adquisition_duration: ",\
     # power_data_adquisition_duration)
 
-    if board == "ZCU":
+    if board["power"]["rails"] == "dual":
         # This is a dual power measurement, we have to divide the data
         # Don't care about last element since is indicates the elapsed time
         # in cycles
@@ -49,7 +49,7 @@ def read_power_data(path: str, board: str):
         # function uses nparrays. Returns np arrays
         return top_power_data, bottom_power_data, power_time
 
-    elif board == "PYNQ":
+    elif board["power"]["rails"] == "mono":
 
         power_data = power_data_raw[:-1]
 
@@ -63,9 +63,12 @@ def read_power_data(path: str, board: str):
         # function uses nparrays. Returns np arrays
         return power_data, power_time
 
+    else:
+        raise ValueError(f"board['power']['rails'] not supported: {board['power']['rails']}")
+
 
 @multimethod
-def read_power_data(buffer: memoryview, board: str):
+def read_power_data(buffer: memoryview, board: dict):
     """ Reads the data from the power consumption file
     """
 
@@ -80,7 +83,7 @@ def read_power_data(buffer: memoryview, board: str):
     # print("\npower_data_adquisition_duration: ",\
     # power_data_adquisition_duration)
 
-    if board == "ZCU":
+    if board["power"]["rails"] == "dual":
         # This is a dual power measurement, we have to divide the data
         # Don't care about last element since is indicates the elapsed time
         # in cycles
@@ -97,7 +100,7 @@ def read_power_data(buffer: memoryview, board: str):
         # function uses nparrays. Returns np arrays
         return top_power_data, bottom_power_data, power_time
 
-    elif board == "PYNQ":
+    elif board["power"]["rails"] == "mono":
 
         power_data = power_data_raw[:-1]
 
@@ -110,6 +113,9 @@ def read_power_data(buffer: memoryview, board: str):
         # There is no conversion back to list because the process_power_data
         # function uses nparrays. Returns np arrays
         return power_data, power_time
+
+    else:
+        raise ValueError(f"board['power']['rails'] not supported: {board['power']['rails']}")
 
 
 def butter_lowpass(cutoff, fs, order=5):
@@ -144,11 +150,11 @@ def filter_power_data(power_data, enabled, order, fs, cutoff):
 
 
 def process_power_values_zcu(power_data_a,
-                                power_data_b,
-                                power_time,
-                                system_freq_MHz,
-                                rshunt_index_a,
-                                rshunt_index_b):
+                             power_data_b,
+                             power_time,
+                             system_freq_MHz,
+                             rshunt_index_a,
+                             rshunt_index_b):
 
     """ Conver from binary value to actual watts """
 
@@ -186,8 +192,8 @@ def process_power_values_zcu(power_data_a,
 
 
 def process_power_values_pynq(power_data,
-                                 power_time,
-                                 system_freq_MHz):
+                              power_time,
+                              system_freq_MHz):
 
     """ Conver from binary value to actual watts """
 
@@ -216,6 +222,15 @@ def process_power_values_pynq(power_data,
     y_values = (power_data * power_conversion_factor)
     # Returns np arrays
     return [x_values, y_values]
+
+
+def process_power_values_au250(power_data,
+                               power_time,
+                               system_freq_MHz):
+
+    """ Conver from CMS value to actual watts """
+    # TODO: Implement this function
+    raise NotImplementedError("Function not implemented")
 
 
 @multimethod
@@ -394,8 +409,6 @@ def slice_traces_data(traces_x_data, traces_y_data, start_time, end_time):
 
 def process_monitor_data(power_buffer,
                         traces_buffer,
-                        system_freq_MHz,
-                        num_signals,
                         board,
                         filtering=False):
     """ Rebuild the event-based traces signals """
@@ -407,10 +420,10 @@ def process_monitor_data(power_buffer,
     # POWER
 
     # Read power data
-    if board == "ZCU":
+    if board["power"]["rails"] == "dual":
         top_power_data, \
             bottom_power_data, \
-            power_time = read_power_data(power_buffer, "ZCU")
+            power_time = read_power_data(power_buffer, board)
 
         # Filter power data
         top_power_data = filter_power_data(top_power_data,
@@ -423,18 +436,10 @@ def process_monitor_data(power_buffer,
                                             16,
                                             1000000,
                                             100000)
-
-        # Convert to x and y (watts) values
-        power_values = process_power_values_zcu(top_power_data,
-                                                bottom_power_data,
-                                                power_time,
-                                                system_freq_MHz,
-                                                0,
-                                                1)
-    elif board == "PYNQ":
+    elif board["power"]["rails"] == "mono":
         # Read power data
         power_data, \
-            power_time = read_power_data(power_buffer, "PYNQ")
+            power_time = read_power_data(power_buffer, board)
 
         # Filter power data
         power_data = filter_power_data(power_data,
@@ -442,16 +447,30 @@ def process_monitor_data(power_buffer,
                                     16,
                                     1000000,
                                     100000)
+    else:
+        raise ValueError(f"Board['power']['rails'] not supported: {board['power']['rails']}")
 
+    # Process power data
+    if board["power"]["process"] == "zcu":
+        # Convert to x and y (watts) values
+        power_values = process_power_values_zcu(top_power_data,
+                                                bottom_power_data,
+                                                power_time,
+                                                board["traces"]["freq_MHz"],
+                                                0,
+                                                1)
+    elif board["power"]["process"] == "pynq":
         # Convert to x and y (watts) values
         power_values = process_power_values_pynq(power_data,
-                                                power_time,
-                                                system_freq_MHz)
-    elif board == "AU250":
-        # TODO: Implement this
-        raise ValueError(f"Board not supported: {board}")
+                                                 power_time,
+                                                 board["traces"]["freq_MHz"])
+    elif board["power"]["process"] == "au250":
+        # Convert to x and y (watts) values
+        power_values = process_power_values_au250(power_data,
+                                                 power_time,
+                                                 board["traces"]["freq_MHz"])
     else:
-        raise ValueError(f"Board not supported: {board}")
+        raise ValueError(f"Board['power']['process'] not supported: {board['power']['process']}")
 
     # Traces
 
@@ -460,14 +479,14 @@ def process_monitor_data(power_buffer,
 
     # Process traces data
     traces_data_list = []
-    for pos in range(num_signals):
+    for pos in range(board["traces"]["num_signals"]):
         traces_data_list.append(process_traces_data(events_data_raw, pos))
 
     # Unpack traces
     traces_x_values_list = []
     traces_y_values_list = []
     # Convert from cycles to ms
-    conversion_factor = system_freq_MHz * 1000  # (1 / conversion_factor) to convert from cycles to ms
+    conversion_factor = board["traces"]["freq_MHz"] * 1000  # (1 / conversion_factor) to convert from cycles to ms
     for array in traces_data_list:
         traces_x_values_list.append(array[:, 0] / conversion_factor)
         traces_y_values_list.append(np.copy(array[:, 1]))
@@ -477,18 +496,15 @@ def process_monitor_data(power_buffer,
         traces_y_values_list
 
 
-def fragmentate_monitor_measurements_zcu(power_buffer,
+def fragmentate_monitor_measurements_dual(power_buffer,
                                             traces_buffer,
-                                            kernel_combinations):
+                                            kernel_combinations,
+                                            board):
     """
     Fragmentates the monitor data to get the info
     corresponding just to each particular kernel combination (slicing the
     CON.BIN and SIG.BIN files)
     """
-
-    # TODO: Make it customizable
-    system_freq_MHz = 100
-    num_signals = 16
 
     # Process the monitor data (dual)
     [top_power_x_values,\
@@ -498,9 +514,7 @@ def fragmentate_monitor_measurements_zcu(power_buffer,
         traces_x_values_list,\
         traces_y_values_list = process_monitor_data(power_buffer,
                                                     traces_buffer,
-                                                    system_freq_MHz,
-                                                    num_signals,
-                                                    board="ZCU",
+                                                    board,
                                                     filtering=False)
 
     # Generate the list of lists that will cointaint the sliced power and
@@ -568,18 +582,15 @@ def fragmentate_monitor_measurements_zcu(power_buffer,
         traces_y_values_fragments_list]
 
 
-def fragmentate_monitor_measurements_pynq(power_buffer,
-                                        traces_buffer,
-                                        kernel_combinations):
+def fragmentate_monitor_measurements_mono(power_buffer,
+                                          traces_buffer,
+                                          kernel_combinations,
+                                          board):
     """
     Fragmentates the monitor data to get the info
     corresponding just to each particular kernel combination (slicing the
     CON.BIN and SIG.BIN files)
     """
-
-    # TODO: Make it customizable
-    system_freq_MHz = 100
-    num_signals = 8
 
     # Process the monitor data (mono)
     [power_x_values,\
@@ -587,9 +598,7 @@ def fragmentate_monitor_measurements_pynq(power_buffer,
         traces_x_values_list,\
         traces_y_values_list = process_monitor_data(power_buffer,
                                                     traces_buffer,
-                                                    system_freq_MHz,
-                                                    num_signals,
-                                                    board="PYNQ",
+                                                    board,
                                                     filtering=False)
 
     # Generate the list of lists that will cointaint the sliced power and
@@ -645,9 +654,8 @@ def fragmentate_monitor_measurements_pynq(power_buffer,
 
 # Map board to functions
 fragmentate_monitor_functions = {
-    "ZCU": fragmentate_monitor_measurements_zcu,
-    "PYNQ": fragmentate_monitor_measurements_pynq,
-    # TODO: Implement AU250
+    "dual": fragmentate_monitor_measurements_dual,
+    "mono": fragmentate_monitor_measurements_mono
 }
 
 
@@ -661,9 +669,10 @@ def fragmentate_monitor_measurements(power_buffer,
     CON.BIN and SIG.BIN files)
     """
 
-    if board not in fragmentate_monitor_functions:
-        raise ValueError(f"Board not supported: {board}")
+    if board["power"]["rails"] not in fragmentate_monitor_functions:
+        raise ValueError(f"Board['power']['rails'] not supported: {board['power']['rails']}")
 
-    return fragmentate_monitor_functions[board](power_buffer,
+    return fragmentate_monitor_functions[board["power"]["rails"]](power_buffer,
                                                 traces_buffer,
-                                                kernel_combinations)
+                                                kernel_combinations,
+                                                board)
