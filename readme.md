@@ -1,4 +1,3 @@
-Incremental Learning Module
 # Incremental Learning Module
 
 The `incremental_learning` module provides tools and classes for implementing and managing online learning models. It includes functionalities for processing data, managing shared memory buffers, and training/testing models in real-time.
