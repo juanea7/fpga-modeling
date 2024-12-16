@@ -37,7 +37,7 @@ parser = argparse.ArgumentParser()
 
 # Indicate which board has been used
 parser.add_argument("board",
-                    choices=["ZCU", "PYNQ", "AU250"],
+                    choices=["ZCU", "PYNQ", "AU250", "MDC"],
                     help="Type of board used")
 
 # This is the correct way to handle accepting multiple arguments.
@@ -90,6 +90,12 @@ elif args.board == "AU250":
             "traces": {"num_signals": 32,
                         "freq_MHz": 100},
             "arch": "64bit"}
+elif args.board == "MDC":
+    board = {"power": {"rails": "mono",
+                       "process": "mdc"},
+             "traces": {"num_signals": 2,
+                        "freq_MHz": 100},
+             "arch": "64bit"}
 else:
     raise ValueError(F"Board not supported: {args.board}")
 

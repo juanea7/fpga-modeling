@@ -233,6 +233,23 @@ def process_power_values_au250(power_data,
     raise NotImplementedError("Function not implemented")
 
 
+def process_power_values_mdc(power_data,
+                             power_time,
+                             system_freq_MHz):
+
+    """ Conver from INA260 power value to actual watts """
+
+    # The power data is in mW, so we have to convert it to W
+    power_conversion_factor = 1 / 1000
+
+    # Convert time from cycles to ms
+    x_values = (power_time / (system_freq_MHz * 1000))
+    # Apply the conversion factor to the power values
+    y_values = (power_data * power_conversion_factor)
+    # Returns np arrays
+    return [x_values, y_values]
+
+
 @multimethod
 def read_traces_data(path):
     """ Reads the data from the traces file """
@@ -469,6 +486,11 @@ def process_monitor_data(power_buffer,
         power_values = process_power_values_au250(power_data,
                                                  power_time,
                                                  board["traces"]["freq_MHz"])
+    elif board["power"]["process"] == "mdc":
+        # Convert to x and y (watts) values
+        power_values = process_power_values_mdc(power_data,
+                                                power_time,
+                                                board["traces"]["freq_MHz"])
     else:
         raise ValueError(f"Board['power']['process'] not supported: {board['power']['process']}")
 

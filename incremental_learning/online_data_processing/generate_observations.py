@@ -87,9 +87,10 @@ def get_average_observation_features_from_data_power_dual(observation_name,
     # Calculate features
     # (continuous_series_arithmetic_mean has been used to avoid doing
     # interpolation reducing drastically the execution time)
-    tmp = top_power_y_values[start_power_index:end_power_index]
+    # The +1 is to include the last element
+    tmp = top_power_y_values[start_power_index:end_power_index+1]
     average_top_power = calculate_continuous_series_arithmetic_mean(tmp)
-    tmp = bottom_power_y_values[start_power_index:end_power_index]
+    tmp = bottom_power_y_values[start_power_index:end_power_index+1]
     average_bottom_power = calculate_continuous_series_arithmetic_mean(tmp)
     execution_time = (selected_traces_x_values[end_index] -
                       selected_traces_x_values[start_index]) / num_executions
@@ -161,7 +162,13 @@ def get_average_observation_features_from_data_power_mono(observation_name,
     # Calculate features
     # (continuous_series_arithmetic_mean has been used to avoid doing
     # interpolation reducing drastically the execution time)
-    tmp = power_y_values[start_power_index:end_power_index]
+    # The +1 is to include the last element
+    tmp = power_y_values[start_power_index:end_power_index+1]
+    # AD-HOC for MDC
+    # Since the power consumption measure really slow, it can happen that there is just 2 measurements so the get_closest_element_below/above will remove both of them. Just include the last one...
+    # Twice the same value since the calculate_continuous_series_arithmetic_mean function needs at least 2 values
+    if end_power_index <= start_power_index:
+        tmp = [power_y_values[start_power_index], power_y_values[start_power_index]]
     average_power = calculate_continuous_series_arithmetic_mean(tmp)
     execution_time = (selected_traces_x_values[end_index] -
                       selected_traces_x_values[start_index]) / num_executions

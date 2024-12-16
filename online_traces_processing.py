@@ -63,7 +63,7 @@ parser = argparse.ArgumentParser()
 
 # Indicate which board has been used
 parser.add_argument("board",
-                    choices=["ZCU", "PYNQ", "AU250"],
+                    choices=["ZCU", "PYNQ", "AU250", "MDC"],
                     help="Type of board used")
 
 # Indicate the path to read traces from
@@ -96,6 +96,12 @@ elif args.board == "AU250":
     board = {"power": {"rails": "mono",
                        "process": "au250"},
              "traces": {"num_signals": 32,
+                        "freq_MHz": 100},
+             "arch": "64bit"}
+elif args.board == "MDC":
+    board = {"power": {"rails": "mono",
+                       "process": "mdc"},
+             "traces": {"num_signals": 2,
                         "freq_MHz": 100},
              "arch": "64bit"}
 else:

@@ -346,9 +346,16 @@ def training_thread_ram_func(online_models, tcp_socket, board, cpu_usage):
     SHM_POWER_FILE = "power"
     SHM_TRACES_FILE = "traces"
 
-    SHM_ONLINE_REGION_SIZE = 2*1024   # Bytes
-    SHM_POWER_REGION_SIZE = 525*1024  # Bytes
-    SHM_TRACES_REGION_SIZE = 20*1024  # Bytes
+    if board["power"]["process"] ==  "mdc":
+        SHM_ONLINE_REGION_SIZE = 2*1024   # Bytes
+        SHM_POWER_REGION_SIZE = 525*1024  # Bytes
+        SHM_TRACES_REGION_SIZE = 50*1024  # Bytes
+        print("MDC")
+    else:
+        SHM_ONLINE_REGION_SIZE = 2*1024   # Bytes
+        SHM_POWER_REGION_SIZE = 525*1024  # Bytes
+        SHM_TRACES_REGION_SIZE = 20*1024  # Bytes
+        print("FPGA")
 
     # Create the ping-pong buffers
     if number_iterations == 1:
@@ -1209,7 +1216,7 @@ if __name__ == "__main__":
 
     # Indicate which board has been used
     parser.add_argument("board",
-                        choices=["ZCU", "PYNQ", "AU250"],
+                        choices=["ZCU", "PYNQ", "AU250", "MDC"],
                         help="Type of board used")
 
     # Indicate if cpu usage or not (default is true)
@@ -1234,6 +1241,12 @@ if __name__ == "__main__":
         board = {"power": {"rails": "mono",
                         "process": "au250"},
                 "traces": {"num_signals": 32,
+                            "freq_MHz": 100},
+                "arch": "64bit"}
+    elif args.board == "MDC":
+        board = {"power": {"rails": "mono",
+                        "process": "mdc"},
+                "traces": {"num_signals": 2,
                             "freq_MHz": 100},
                 "arch": "64bit"}
     else:
