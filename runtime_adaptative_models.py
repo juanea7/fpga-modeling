@@ -30,6 +30,7 @@ from datetime import datetime, timezone
 # from multiprocessing import Process
 import ctypes as ct
 import pandas as pd
+import numpy as np
 import river
 import pickle
 
@@ -39,6 +40,23 @@ from incremental_learning import online_models as om
 from incremental_learning import ping_pong_buffers as ppb
 from incremental_learning import execution_modes_buffers as emb
 
+# Must be in the same directory as this script
+import csa
+
+
+kernel_names = [
+    "aes",
+    "bulk",
+    "crs",
+    "kmp",
+    "knn",
+    "merge",
+    "nw",
+    "queue",
+    "stencil2d",
+    "stencil3d",
+    "strided"
+]
 
 class FeatureswCPUUsage(ct.Structure):
     """ Features with CPU Usage - This class defines a C-like struct """
@@ -120,6 +138,28 @@ class MetricsMono(ct.Structure):
         ("time_error", ct.c_float)
     ]
 
+class Decision(ct.Structure):
+    """ Scheduling decision - This class defines a C-like struct """
+    _fields_ = [
+        ("aes", ct.c_uint8),
+        ("bulk", ct.c_uint8),
+        ("crs", ct.c_uint8),
+        ("kmp", ct.c_uint8),
+        ("knn", ct.c_uint8),
+        ("merge", ct.c_uint8),
+        ("nw", ct.c_uint8),
+        ("queue", ct.c_uint8),
+        ("stencil2d", ct.c_uint8),
+        ("stencil3d", ct.c_uint8),
+        ("strided", ct.c_uint8)
+    ]
+
+    def __init__(self, **kwargs):
+        for field_name, _ in self._fields_:
+            try:
+                setattr(self, field_name, kwargs[field_name])
+            except KeyError:
+                raise ValueError(f"Missing field '{field_name}' in provided dictionary")
 
 def training_thread_file_func(online_models, tcp_socket, board, cpu_usage):
     """Train models at run-time. (online data stored in disk-backed files)"""
@@ -323,7 +363,7 @@ def training_thread_file_func(online_models, tcp_socket, board, cpu_usage):
     print(f"[{'Training Thread (f)':^19}] Thread terminated.")
 
 
-def training_thread_ram_func(online_models, tcp_socket, board, cpu_usage):
+def training_thread_ram_func(online_models, tcp_socket, board, cpu_usage, schedule_csa, csa_scheduler):
     """Train models at run-time. (or test is the c code wants to check metrics)
     (online_data stored in ram-backed mmap'ed files)
     """
@@ -559,6 +599,13 @@ def training_thread_ram_func(online_models, tcp_socket, board, cpu_usage):
             temporal_data[-1].append(iteration - wait_obs - 1)
         else:
             temporal_data[-1].append(iteration - 1)  # Since update_models increases the iteration
+
+        # Reset cache when training since cached predictions are no longer accurate
+        if next_operation_mode == "train" and schedule_csa:
+            print("Cached Predictor Info (to train):", csa_scheduler._cached_predict.cache_info())
+            csa_scheduler._cached_predict.cache_clear()
+            print("Cached Predictor Info (cleared):", csa_scheduler._cached_predict.cache_info())
+
 
         # TODO: Lo de entrenar of test se quita porque ahora lo gestion el Training Monitor
         # Send the metrics obtained via socket
@@ -1053,7 +1100,61 @@ def training_thread_ram_func_old(online_models, tcp_socket, board, cpu_usage):
     print(f"[{'Training Thread (r)':^19}] Thread terminated.")
 
 
-def prediction_thread_func(online_models, tcp_socket, board, cpu_usage):
+def csa_scheduling_policy_func(csa_scheduler, schedule_request):
+    """
+    A scheduling policy that selects the kernel with the least overall interaction using a CSA.
+    """
+
+    # print("Schedule request: ", schedule_request)
+
+    # Get cpu usage
+    user_cpu = schedule_request.pop("user")
+    kernel_cpu = schedule_request.pop("kernel")
+    idle_cpu = schedule_request.pop("idle")
+
+    cpu_usage = {
+        "user": user_cpu,
+        "kernel": kernel_cpu,
+        "idle": idle_cpu
+    }
+
+    # Remove the "Main" key
+    schedule_request.pop("Main")
+
+    # Create a list of running kernles
+    running_kernels = np.fromiter(
+        ((v if v < 0xFF else 0) for v in schedule_request.values()),
+        dtype=int,
+        count=len(schedule_request)
+    )
+
+    # Create a list of schedulable kernels, represented by their kernel_id (a index in the kernel_names list)
+    schedulable_kernels = [i for i, v in enumerate(schedule_request.values()) if v == 0xFF]
+
+    # print("Schedulable kernels: ", schedulable_kernels)
+
+    # Make schedule decision (returns just the schedulable kernels)
+    schedule_decision = csa_scheduler.run_standalone(
+        n_crows=4,
+        max_iter=4,
+        awareness_prob=0.6,
+        flight_length=4.5,
+        running_kernels=running_kernels,
+        schedulable_kernels=schedulable_kernels,
+        cpu_usage=cpu_usage
+        )
+
+    # Expanded schedule decision (CUs per every kernel)
+    new_configuration = running_kernels.copy()
+    new_configuration[schedulable_kernels] = schedule_decision
+
+    # Convert back to dictonary
+    new_configuration_dict = dict(zip(schedule_request.keys(), new_configuration))
+
+    return new_configuration_dict
+
+
+def prediction_thread_func(online_models, tcp_socket, board, cpu_usage, schedule_csa, csa_scheduler):
     """Use models to make a prediction at run-time."""
 
     print(f"[{'Prediction Thread':^19}] In")
@@ -1080,6 +1181,31 @@ def prediction_thread_func(online_models, tcp_socket, board, cpu_usage):
 
             t_inter0 = time.time()
             # t0 = time.time()
+
+            if schedule_csa:
+                # Convert from c-like struct to python
+                request = FeatureswCPUUsage.from_buffer_copy(buff)
+                request = request.get_dict()
+                if request["Main"] != 0xFF:
+                    print("[{'Prediction Thread':^19}] Scheduling Request Error - Main:",  request["Main"])
+
+                # Call the scheduling function
+                schedule_decision = csa_scheduling_policy_func(csa_scheduler, request)
+
+                # Convert the schedule decision to a c-like struct
+                decision = Decision(**schedule_decision)
+
+                # Send the schedule decision via socket
+                tcp_socket.send_data(decision)
+
+                # Time measurement logic
+                t_inter1 = time.time()
+                t_interv += t_inter1-t_inter0
+
+                # Increment the counter
+                i += 1
+
+                continue
 
             # Convert from c-like struct to python
             if cpu_usage:
@@ -1215,6 +1341,9 @@ if __name__ == "__main__":
     # Indicate if cpu usage or not (default is true)
     parser.add_argument('--no-cpu-usage', action='store_true')
 
+    # Indicate whether to schedule with CSA (true if argument is present)
+    parser.add_argument('--csa', action='store_true')
+
     args = parser.parse_args(sys.argv[1:])
 
     # Set the board
@@ -1274,10 +1403,15 @@ if __name__ == "__main__":
                                            struct.calcsize("i"))
     print(f"[{'Main Thread':^19}] TCP socket created.")
 
-    # Create TCP server socket used to trigger the models' predictoin process
-    tcp_prediction_socket = ipc.ServerSocketTCP("my_prediction_socket",
-                                                ct.sizeof(Features),
-                                                ct.sizeof(Prediction))
+    # Create TCP server socket used to trigger the models' predictoin process (or CSA)
+    if args.csa:
+        tcp_prediction_socket = ipc.ServerSocketTCP("my_prediction_socket",
+                                                    ct.sizeof(Features),
+                                                    ct.sizeof(Decision))
+    else:
+        tcp_prediction_socket = ipc.ServerSocketTCP("my_prediction_socket",
+                                                    ct.sizeof(Features),
+                                                    ct.sizeof(Prediction))
     print(f"[{'Main Thread':^19}] TCP socket created.")
 
     # Create thread safe lock
@@ -1288,20 +1422,30 @@ if __name__ == "__main__":
     # incremental_models = om.OnlineModels(power_rails=board["power"]["rails"], lock=lock, train_mode="always_train", capture_all_traces=True)  # Train forever (for the paper)
     print(f"[{'Main Thread':^19}] Online Models have been successfully initialized.")
 
+    # Initialize the scheduler
+    if args.csa:
+        csa_scheduler = csa.CrowSearchAlgorithm(len(kernel_names), board["traces"]["num_signals"]/2, kernel_names=kernel_names, models=incremental_models._models)
+    else:
+        csa_scheduler = None
+
     # Create the training and prediction threads
     training_thread = threading.Thread(
         target=training_thread_func,
         args=(incremental_models,
               tcp_train_socket,
               board,
-              cpu_usage_flag)
+              cpu_usage_flag,
+              args.csa,
+              csa_scheduler)
     )
     prediction_thread = threading.Thread(
         target=prediction_thread_func,
         args=(incremental_models,
               tcp_prediction_socket,
               board,
-              cpu_usage_flag)
+              cpu_usage_flag,
+              args.csa,
+              csa_scheduler)
     )
     print(f"[{'Main Thread':^19}] Both threads have been successfully created.")
 
@@ -1314,6 +1458,8 @@ if __name__ == "__main__":
     training_thread.join()
     prediction_thread.join()
     print(f"[{'Main Thread':^19}] Both threads have successfully finished.")
+
+    print("Cached Predictor Info (final):", csa_scheduler._cached_predict.cache_info())
 
     # Set observations file path
     # (there because is executed from ssh without permission in folder outputs)
